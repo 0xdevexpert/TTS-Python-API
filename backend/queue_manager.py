@@ -1,4 +1,3 @@
-
 import asyncio
 import uuid
 import logging
@@ -68,38 +67,32 @@ class JobManager:
         # Generate output filename in the audio_files directory
         filename = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
         
-        # Prepare standard parameters
+        # Prepare voice and text parameters
         voice = tts_request.voice
-        text = tts_request.text
         
-        # Create the communicate object with the voice and text
-        communicate = edge_tts.Communicate(text, voice)
-        
-        # Set rate, pitch and volume as optional parameters using proper edge-tts format
-        # Note: edge-tts uses command-line style parameters, not options dictionary
-        rate = None
+        # Build voice options string for edge-tts
+        voice_options = ""
         if tts_request.speed != "1":
-            # Convert the speed multiplier to a percentage string for edge-tts
             speed_percent = int(float(tts_request.speed) * 100)
-            rate = f"{speed_percent}%"
-        
-        pitch = None
+            voice_options += f"+rate={speed_percent}% "
+            
         if tts_request.pitch != "0":
-            # Format pitch properly with Hz units
             pitch_value = float(tts_request.pitch)
-            pitch = f"+{pitch_value}Hz" if pitch_value > 0 else f"{pitch_value}Hz"
-        
-        volume = None
+            pitch_str = f"+{pitch_value}Hz" if pitch_value > 0 else f"{pitch_value}Hz"
+            voice_options += f"+pitch={pitch_str} "
+            
         if tts_request.volume != "100":
-            volume = f"{tts_request.volume}%"
+            voice_options += f"+volume={tts_request.volume}% "
+            
+        # If we have voice options, append them to the voice
+        if voice_options:
+            voice = f"{voice}{voice_options.rstrip()}"
+            
+        # Create the communicate object with modified voice string if needed
+        communicate = edge_tts.Communicate(tts_request.text, voice)
         
-        # Use the communicate.save method with optional parameters for rate, pitch, and volume
-        await communicate.save(
-            filename,
-            rate=rate,
-            volume=volume,
-            pitch=pitch
-        )
+        # Use the communicate.save method with just the filename parameter
+        await communicate.save(filename)
         
         logger.info(f"Job {job_id}: TTS conversion saved to {filename}")
 
