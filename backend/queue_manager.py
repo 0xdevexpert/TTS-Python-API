@@ -68,23 +68,25 @@ class JobManager:
         # Generate output filename in the audio_files directory
         filename = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
 
-        # First create a communicator with the base voice
-        communicator = edge_tts.Communicate(tts_request.text, tts_request.voice)
-        
-        # Apply SSML for pitch and rate directly to the communication options
-        # This uses the proper Edge TTS format for modifying speech parameters
-        if tts_request.pitch != "0":
-            communicator.options["pitch"] = f"+{tts_request.pitch}Hz" if float(tts_request.pitch) > 0 else f"{tts_request.pitch}Hz"
-        
-        if tts_request.speed != "1":
-            # Convert the speed multiplier to a percentage for edge-tts
-            speed_percent = int(float(tts_request.speed) * 100)
-            communicator.options["rate"] = f"{speed_percent}%"
-            
-        if tts_request.volume != "100":
-            # Set volume directly as percentage
-            communicator.options["volume"] = f"{tts_request.volume}%"
+        # Prepare TTS parameters
+        voice = tts_request.voice
+        text = tts_request.text
 
+        # Create SSML for pitch, rate and volume modifications if needed
+        if tts_request.pitch != "0" or tts_request.speed != "1" or tts_request.volume != "100":
+            # Calculate values for SSML
+            pitch_value = f"{tts_request.pitch}Hz" if float(tts_request.pitch) > 0 else f"{tts_request.pitch}Hz"
+            speed_value = f"{int(float(tts_request.speed) * 100)}%"
+            volume_value = f"{tts_request.volume}%"
+            
+            # Format text as SSML
+            text = f"""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
+                <prosody pitch="{pitch_value}" rate="{speed_value}" volume="{volume_value}">{tts_request.text}</prosody>
+            </speak>"""
+        
+        # Create communicator with text and voice
+        communicator = edge_tts.Communicate(text, voice)
+        
         # Edge-tts save method will write file asynchronously
         await communicator.save(filename)
         logger.info(f"Job {job_id}: TTS conversion saved to {filename}")
