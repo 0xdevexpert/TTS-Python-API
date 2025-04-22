@@ -10,7 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useToast } from "@/hooks/use-toast";
 
 const TTSForm = () => {
   const [formData, setFormData] = useState({
@@ -23,6 +24,7 @@ const TTSForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [jobId, setJobId] = useState(null);
   const [error, setError] = useState(null);
+  const { toast } = useToast();
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -42,8 +44,18 @@ const TTSForm = () => {
     try {
       const response = await convertTextToSpeech(formData);
       setJobId(response.job_id);
+      toast({
+        title: "Success!",
+        description: `Job submitted successfully. Job ID: ${response.job_id}`,
+      });
     } catch (err) {
-      setError(err.response?.data?.message || 'An error occurred while processing your request');
+      console.error("TTS Request failed:", err);
+      setError(err.message || 'An error occurred while processing your request');
+      toast({
+        variant: "destructive",
+        title: "Connection Error",
+        description: err.message || "Failed to connect to the TTS service",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -151,17 +163,30 @@ const TTSForm = () => {
 
           {error && (
             <Alert variant="destructive">
+              <AlertTitle>Error</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
 
           {jobId && (
             <Alert className="bg-secondary text-secondary-foreground border-secondary">
+              <AlertTitle>Success</AlertTitle>
               <AlertDescription>
                 <span className="font-medium">Job ID:</span> {jobId}
+                <p className="mt-1 text-xs">Your text-to-speech conversion is being processed.</p>
               </AlertDescription>
             </Alert>
           )}
+
+          <div className="bg-muted p-4 rounded-md mt-4">
+            <h4 className="font-medium mb-2">Connection Status</h4>
+            <p className="text-sm">
+              Backend URL: {import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Make sure your FastAPI backend is running with: <code>uvicorn main:app --reload</code>
+            </p>
+          </div>
 
           <Button 
             type="submit" 

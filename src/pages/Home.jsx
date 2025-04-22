@@ -1,7 +1,8 @@
 
 import React from 'react';
 import TTSForm from '../components/TTSForm';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ExternalLink } from 'lucide-react';
 
 const Home = () => {
   return (
@@ -14,8 +15,27 @@ const Home = () => {
       </div>
       
       <Alert className="mb-6 bg-secondary border-secondary">
+        <AlertTitle className="flex items-center gap-2">
+          Backend Setup Required
+          <ExternalLink className="h-4 w-4" />
+        </AlertTitle>
         <AlertDescription>
-          <strong>Note:</strong> To use this frontend, you'll need to have the FastAPI backend running on {import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}. The backend processes text-to-speech requests and sends notifications to your webhook.
+          <p>
+            To use this application, you need to have the FastAPI backend running on{' '}
+            <span className="font-medium">{import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}</span>
+          </p>
+          
+          <div className="mt-2">
+            <p className="font-semibold">Start the backend server:</p>
+            <pre className="bg-black text-white p-2 rounded mt-1 overflow-x-auto">
+              cd backend<br />
+              uvicorn main:app --reload
+            </pre>
+          </div>
+          
+          <p className="mt-2 text-sm">
+            The backend processes text-to-speech requests with edge-tts and sends notifications to your webhook URL.
+          </p>
         </AlertDescription>
       </Alert>
       
