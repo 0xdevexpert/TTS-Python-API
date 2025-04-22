@@ -8,7 +8,6 @@ const ttsApi = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  // Add a timeout to prevent hanging requests
   timeout: 10000,
 });
 
@@ -18,21 +17,29 @@ export const convertTextToSpeech = async (ttsData) => {
     return response.data;
   } catch (error) {
     console.error('Error in TTS API:', error);
-    
-    // Create a more user-friendly error message
     let errorMessage = 'An error occurred while connecting to the TTS service';
-    
     if (error.code === 'ERR_NETWORK') {
       errorMessage = 'Cannot connect to the backend server. Please make sure the backend is running at ' + apiBaseUrl;
     } else if (error.response) {
-      // Server responded with an error status
       errorMessage = error.response.data?.detail || `Server error: ${error.response.status}`;
     } else if (error.request) {
-      // Request was made but no response received
       errorMessage = 'No response received from the server. Check if the backend is running.';
     }
-    
     throw new Error(errorMessage);
+  }
+};
+
+// Fetch audio for a given job ID (assumes FastAPI serves /tts/audio/{job_id})
+export const fetchTtsAudio = async (jobId) => {
+  try {
+    // Get audio as blob (audio/mpeg or wav)
+    const response = await ttsApi.get(`/tts/audio/${jobId}`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching TTS audio:', error);
+    throw new Error('Could not fetch audio from the server');
   }
 };
 

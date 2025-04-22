@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { convertTextToSpeech } from '../api/ttsApi';
-import { Mic, MicOff, SlidersVertical, Volume2 } from 'lucide-react';
+import { convertTextToSpeech, fetchTtsAudio } from '../api/ttsApi';
+import { Mic, SlidersVertical, Volume2 } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner';
 import VoiceSelector from './VoiceSelector';
 import { Button } from '@/components/ui/button';
@@ -16,13 +16,15 @@ import { useToast } from "@/hooks/use-toast";
 const TTSForm = () => {
   const [formData, setFormData] = useState({
     text: '',
-    voice: 'en-US-AriaNeural', // Default voice
+    voice: 'en-US-AriaNeural',
     pitch: '0',
     speed: '1',
     volume: '100',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [jobId, setJobId] = useState(null);
+  const [audioUrl, setAudioUrl] = useState(null);
+  const [fetchingAudio, setFetchingAudio] = useState(false);
   const [error, setError] = useState(null);
   const { toast } = useToast();
 
@@ -40,6 +42,7 @@ const TTSForm = () => {
     setIsSubmitting(true);
     setError(null);
     setJobId(null);
+    setAudioUrl(null);
 
     try {
       const response = await convertTextToSpeech(formData);
@@ -48,6 +51,8 @@ const TTSForm = () => {
         title: "Success!",
         description: `Job submitted successfully. Job ID: ${response.job_id}`,
       });
+      // Try to auto-fetch audio after a short delay (optional: backend-dependent)
+      setTimeout(() => fetchAudio(response.job_id), 2500);
     } catch (err) {
       console.error("TTS Request failed:", err);
       setError(err.message || 'An error occurred while processing your request');
@@ -58,6 +63,27 @@ const TTSForm = () => {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Fetch audio blob and create a URL for <audio> tag
+  const fetchAudio = async (jid = jobId) => {
+    if (!jid) return;
+    setFetchingAudio(true);
+    setError(null);
+    setAudioUrl(null);
+    try {
+      const audioBlob = await fetchTtsAudio(jid);
+      const url = URL.createObjectURL(audioBlob);
+      setAudioUrl(url);
+      toast({
+        title: "Audio Ready!",
+        description: "You can now listen to your synthesized speech.",
+      });
+    } catch (err) {
+      setError("The audio is not ready yet. Please try again in a moment.");
+    } finally {
+      setFetchingAudio(false);
     }
   };
 
@@ -86,7 +112,6 @@ const TTSForm = () => {
               required
             />
           </div>
-
           <div className="space-y-2">
             <Label htmlFor="voice">Voice</Label>
             <Input
@@ -101,7 +126,6 @@ const TTSForm = () => {
               onVoiceSelect={(voice) => setFormData({ ...formData, voice })}
             />
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -121,7 +145,6 @@ const TTSForm = () => {
                 />
               </div>
             </div>
-
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="speed">Speed</Label>
@@ -140,7 +163,6 @@ const TTSForm = () => {
                 />
               </div>
             </div>
-
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="volume">Volume</Label>
@@ -174,6 +196,23 @@ const TTSForm = () => {
               <AlertDescription>
                 <span className="font-medium">Job ID:</span> {jobId}
                 <p className="mt-1 text-xs">Your text-to-speech conversion is being processed.</p>
+                <div className="mt-2">
+                  <Button variant="outline" size="sm" type="button" disabled={fetchingAudio} onClick={() => fetchAudio(jobId)}>
+                    {fetchingAudio ? (
+                      <>
+                        <LoadingSpinner size="small" />
+                        <span className="ml-2">Fetching Audio...</span>
+                      </>
+                    ) : "Fetch & Play Audio"}
+                  </Button>
+                </div>
+                {audioUrl && (
+                  <div className="mt-4">
+                    <audio controls src={audioUrl} className="w-full">
+                      Your browser does not support the audio element.
+                    </audio>
+                  </div>
+                )}
               </AlertDescription>
             </Alert>
           )}
