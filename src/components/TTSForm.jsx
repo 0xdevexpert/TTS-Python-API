@@ -124,8 +124,6 @@ const TTSForm = () => {
             />
           )}
 
-          <BackendStatusInfo />
-
           <TTSFormActions
             isSubmitting={isSubmitting}
             formData={formData}

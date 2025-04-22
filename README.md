@@ -30,7 +30,7 @@ This is the frontend application for the Vocal Craft Orchestrator, a text-to-spe
    npm install
    ```
 3. Configure environment variables:
-   - Create or modify `.env` file with `VITE_API_BASE_URL=http://localhost:8000` (or your API URL)
+   - Create or modify `.env` file with `VITE_API_BASE_URL=http://localhost:8000` (or API URL)
 
 4. Start the development server:
    ```
@@ -47,7 +47,7 @@ This is the frontend application for the Vocal Craft Orchestrator, a text-to-spe
    - Set volume (0% to 100%)
 3. Click "Convert to Speech" button
 4. The system will display a Job ID when the request is submitted
-5. The backend will process the request and notify your webhook when complete
+5. The backend will process the request and notify webhook when complete
 
 ## Connecting to Backend
 
