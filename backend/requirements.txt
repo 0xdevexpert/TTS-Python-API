@@ -1,0 +1,4 @@
+aiohttp
+edge-tts
+pydantic
+uvicorn
