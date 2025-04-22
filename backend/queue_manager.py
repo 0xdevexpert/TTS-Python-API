@@ -1,3 +1,4 @@
+
 import asyncio
 import uuid
 import logging
@@ -67,34 +68,36 @@ class JobManager:
         # Generate output filename in the audio_files directory
         filename = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
         
-        # Prepare voice and text parameters
-        voice = tts_request.voice
+        # Create SSML for controlling voice parameters
+        ssml = self._create_ssml(tts_request)
         
-        # Build voice options string for edge-tts
-        voice_options = ""
-        if tts_request.speed != "1":
-            speed_percent = int(float(tts_request.speed) * 100)
-            voice_options += f"+rate={speed_percent}% "
-            
-        if tts_request.pitch != "0":
-            pitch_value = float(tts_request.pitch)
-            pitch_str = f"+{pitch_value}Hz" if pitch_value > 0 else f"{pitch_value}Hz"
-            voice_options += f"+pitch={pitch_str} "
-            
-        if tts_request.volume != "100":
-            voice_options += f"+volume={tts_request.volume}% "
-            
-        # If we have voice options, append them to the voice
-        if voice_options:
-            voice = f"{voice}{voice_options.rstrip()}"
-            
-        # Create the communicate object with modified voice string if needed
-        communicate = edge_tts.Communicate(tts_request.text, voice)
+        # Create communicate object with the selected voice and SSML
+        communicate = edge_tts.Communicate(ssml, tts_request.voice)
         
-        # Use the communicate.save method with just the filename parameter
+        # Save audio to file
         await communicate.save(filename)
         
         logger.info(f"Job {job_id}: TTS conversion saved to {filename}")
+
+    def _create_ssml(self, tts_request: TTSRequest) -> str:
+        """Create SSML markup with prosody elements for pitch, rate, and volume."""
+        # Process pitch
+        pitch_value = "0Hz" if tts_request.pitch == "0" else f"{tts_request.pitch}Hz"
+        
+        # Process speed/rate: convert decimal (e.g., 1.5) to percentage (e.g., 150%)
+        speed_value = f"{int(float(tts_request.speed) * 100)}%"
+        
+        # Process volume
+        volume_value = f"{tts_request.volume}%"
+        
+        # Create complete SSML
+        ssml = (
+            f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">'
+            f'<prosody pitch="{pitch_value}" rate="{speed_value}" volume="{volume_value}">'
+            f'{tts_request.text}</prosody></speak>'
+        )
+        
+        return ssml
 
     async def _send_webhook(self, result: JobResult):
         if not self.webhook_url or self.webhook_url.startswith("https://your-webhook"):
