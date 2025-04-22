@@ -1,73 +1,86 @@
-# Welcome to your Lovable project
 
-## Project info
+# Vocal Craft Orchestrator - Text-to-Speech Frontend
 
-**URL**: https://lovable.dev/projects/36df5c5b-4db9-44a5-a0b2-86f530b6892f
+This is the frontend application for the Vocal Craft Orchestrator, a text-to-speech conversion system built with React.
 
-## How can I edit this code?
+## Features
 
-There are several ways of editing your application.
+- Clean, responsive UI for text-to-speech conversion
+- Form with customizable voice settings:
+  - Text input
+  - Voice selection
+  - Pitch adjustment
+  - Speed control
+  - Volume control
+- Real-time job ID display after submission
+- Loading states and error handling
 
-**Use Lovable**
+## Getting Started
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/36df5c5b-4db9-44a5-a0b2-86f530b6892f) and start prompting.
+### Prerequisites
 
-Changes made via Lovable will be committed automatically to this repo.
+- Node.js and npm installed
+- Backend API running (FastAPI server)
 
-**Use your preferred IDE**
+### Installation
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+1. Clone the repository
+2. Install dependencies:
+   ```
+   npm install
+   ```
+3. Configure environment variables:
+   - Create or modify `.env` file with `VITE_API_BASE_URL=http://localhost:8000` (or your API URL)
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+4. Start the development server:
+   ```
+   npm run dev
+   ```
 
-Follow these steps:
+## Usage
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+1. Enter the text you want to convert to speech
+2. (Optional) Customize voice settings:
+   - Select a voice (e.g., "en-US-AriaNeural")
+   - Adjust pitch (-10 to 10)
+   - Modify speed (0.5x to 2x)
+   - Set volume (0% to 100%)
+3. Click "Convert to Speech" button
+4. The system will display a Job ID when the request is submitted
+5. The backend will process the request and notify your webhook when complete
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+## Connecting to Backend
 
-# Step 3: Install the necessary dependencies.
-npm i
+This frontend expects a backend API with a `/tts` endpoint that accepts:
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```json
+{
+  "text": "Text to convert",
+  "voice": "en-US-AriaNeural",
+  "pitch": "0",
+  "speed": "1",
+  "volume": "100"
+}
 ```
 
-**Edit a file directly in GitHub**
+And returns a job ID:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```json
+{
+  "job_id": "unique-id-here"
+}
+```
 
-**Use GitHub Codespaces**
+## Technologies Used
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
 - React
-- shadcn-ui
-- Tailwind CSS
+- Axios for API requests
+- ShadcnUI components
+- Tailwind CSS for styling
+- Lucide React for icons
 
-## How can I deploy this project?
+## Next Steps
 
-Simply open [Lovable](https://lovable.dev/projects/36df5c5b-4db9-44a5-a0b2-86f530b6892f) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+- Add job history/status tracking
+- Implement audio playback when conversion is complete
+- Add favorite voices/presets functionality
