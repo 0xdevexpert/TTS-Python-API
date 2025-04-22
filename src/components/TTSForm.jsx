@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { convertTextToSpeech } from '../api/ttsApi';
-import { Mic, MicOff, SliderVertical, Volume2 } from 'lucide-react';
+import { Mic, MicOff, SlidersVertical, Volume2 } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner';
 import VoiceSelector from './VoiceSelector';
 import { Button } from '@/components/ui/button';
@@ -97,7 +97,7 @@ const TTSForm = () => {
                 <span className="text-sm text-muted-foreground">{formData.pitch}</span>
               </div>
               <div className="flex items-center gap-2">
-                <SliderVertical className="h-4 w-4" />
+                <SlidersVertical className="h-4 w-4" />
                 <Slider
                   id="pitch"
                   name="pitch"
@@ -116,7 +116,7 @@ const TTSForm = () => {
                 <span className="text-sm text-muted-foreground">{formData.speed}x</span>
               </div>
               <div className="flex items-center gap-2">
-                <SliderVertical className="h-4 w-4" />
+                <SlidersVertical className="h-4 w-4" />
                 <Slider
                   id="speed"
                   name="speed"
