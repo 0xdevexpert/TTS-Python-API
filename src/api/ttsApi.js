@@ -42,7 +42,6 @@ export const fetchTtsAudio = async (jobId) => {
   }
 };
 
-// New: Delete audio by job ID
 export const deleteTtsAudio = async (jobId) => {
   try {
     const response = await ttsApi.delete(`/tts/audio/${jobId}`);
@@ -52,6 +51,5 @@ export const deleteTtsAudio = async (jobId) => {
     throw new Error('Could not delete audio from the server');
   }
 };
-
 
 export default ttsApi;
