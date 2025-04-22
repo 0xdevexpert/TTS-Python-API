@@ -15,14 +15,6 @@ const Home = () => {
       </div>
       
       <TTSForm />
-      
-      <div className="mt-12 text-center text-sm text-muted-foreground">
-        <p>
-          This system uses edge-tts to convert text to speech with natural-sounding voices.
-          <br />
-          For best results, try different voices and settings.
-        </p>
-      </div>
     </div>
   );
 };
