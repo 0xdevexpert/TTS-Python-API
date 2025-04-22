@@ -68,21 +68,22 @@ class JobManager:
         # Generate output filename in the audio_files directory
         filename = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
 
-        # Prepare pitch and speed values
-        pitch = tts_request.pitch
-        speed = tts_request.speed
-
-        # Construct SSML text directly
-        # Note: We'll pass this as text to edge-tts and it will recognize it as SSML
-        # because it starts with <speak>
-        ssml_text = f"""
-        <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
-            <prosody pitch="{pitch}st" rate="{speed}">{tts_request.text}</prosody>
-        </speak>
-        """
-
-        # Create communicator without the ssml parameter
-        communicator = edge_tts.Communicate(ssml_text, tts_request.voice)
+        # First create a communicator with the base voice
+        communicator = edge_tts.Communicate(tts_request.text, tts_request.voice)
+        
+        # Apply SSML for pitch and rate directly to the communication options
+        # This uses the proper Edge TTS format for modifying speech parameters
+        if tts_request.pitch != "0":
+            communicator.options["pitch"] = f"+{tts_request.pitch}Hz" if float(tts_request.pitch) > 0 else f"{tts_request.pitch}Hz"
+        
+        if tts_request.speed != "1":
+            # Convert the speed multiplier to a percentage for edge-tts
+            speed_percent = int(float(tts_request.speed) * 100)
+            communicator.options["rate"] = f"{speed_percent}%"
+            
+        if tts_request.volume != "100":
+            # Set volume directly as percentage
+            communicator.options["volume"] = f"{tts_request.volume}%"
 
         # Edge-tts save method will write file asynchronously
         await communicator.save(filename)
