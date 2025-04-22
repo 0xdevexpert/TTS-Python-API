@@ -12,7 +12,6 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       protocol: 'wss',
       host: 'tts.catacomb.fyi',
-      port: 443, // Ensure WebSocket uses the HTTPS port
     },
   },
   plugins: [
