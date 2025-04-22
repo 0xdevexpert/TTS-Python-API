@@ -71,3 +71,18 @@ async def get_audio(job_id: str):
         audio_data = f.read()
     
     return Response(content=audio_data, media_type="audio/mpeg")
+
+
+@app.delete("/tts/audio/{job_id}")
+async def delete_audio(job_id: str):
+    """Delete the generated audio file"""
+    audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
+    
+    if not os.path.exists(audio_path):
+        raise HTTPException(status_code=404, detail=f"Audio for job {job_id} not found")
+    
+    try:
+        os.remove(audio_path)
+        return {"message": f"Audio for job {job_id} deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete audio: {str(e)}")
