@@ -1,3 +1,4 @@
+
 import asyncio
 import uuid
 import logging
@@ -71,15 +72,17 @@ class JobManager:
         pitch = tts_request.pitch
         speed = tts_request.speed
 
-        # Construct SSML with pitch and speed
+        # Construct SSML text directly
+        # Note: We'll pass this as text to edge-tts and it will recognize it as SSML
+        # because it starts with <speak>
         ssml_text = f"""
         <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
             <prosody pitch="{pitch}st" rate="{speed}">{tts_request.text}</prosody>
         </speak>
         """
 
-        # Use the SSML directly with edge_tts
-        communicator = edge_tts.Communicate(ssml_text, tts_request.voice, ssml=True)
+        # Create communicator without the ssml parameter
+        communicator = edge_tts.Communicate(ssml_text, tts_request.voice)
 
         # Edge-tts save method will write file asynchronously
         await communicator.save(filename)
