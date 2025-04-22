@@ -1,4 +1,3 @@
-
 import asyncio
 import uuid
 import logging
@@ -68,30 +67,19 @@ class JobManager:
         # Generate output filename in the audio_files directory
         filename = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
 
-        # Prepare text and voice options
-        communicate = edge_tts.Communicate(
-            tts_request.text,
-            tts_request.voice,
-            # pitch, speed, volume must be formatted as edge-tts expects
-            # edge-tts pitch: format "+" or "-" + value + "%"
-            # We will try to pass pitch, speed, and volume in proper format, fallback otherwise
-        )
-
-        # edge-tts doesn't support volume or pitch directly but supports "voice effects"
-        # Here we simulate pitch and speed using voice effects "rate" and "pitch" if supported.
-        # For now, we only use speed (rate) and pitch inside the SSML.
-
-        # Construct SSML with pitch and speed
+        # Prepare pitch and speed values
         pitch = tts_request.pitch
         speed = tts_request.speed
-        volume = tts_request.volume
 
-        # Compose SSML string for effects
-        ssml_text = f"""<speak>
-          <prosody pitch="{pitch}st" rate="{speed}">{tts_request.text}</prosody>
-        </speak>"""
+        # Construct SSML with pitch and speed
+        ssml_text = f"""
+        <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
+            <prosody pitch="{pitch}st" rate="{speed}">{tts_request.text}</prosody>
+        </speak>
+        """
 
-        communicator = edge_tts.Communicate(ssml_text, tts_request.voice)
+        # Use the SSML directly with edge_tts
+        communicator = edge_tts.Communicate(ssml_text, tts_request.voice, ssml=True)
 
         # Edge-tts save method will write file asynchronously
         await communicator.save(filename)
