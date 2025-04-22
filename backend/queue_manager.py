@@ -2,6 +2,7 @@
 import asyncio
 import uuid
 import logging
+import os
 from typing import Optional, Dict, Any
 import aiohttp
 import edge_tts
@@ -9,6 +10,9 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+# Create a directory for storing audio files
+AUDIO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "audio_files")
+os.makedirs(AUDIO_DIR, exist_ok=True)
 
 class TTSRequest(BaseModel):
     text: str
@@ -61,8 +65,8 @@ class JobManager:
             self.semaphore.release()
 
     async def _run_tts(self, tts_request: TTSRequest, job_id: str):
-        # Generate output filename (in-memory could be used if needed)
-        filename = f"/tmp/{job_id}.mp3"
+        # Generate output filename in the audio_files directory
+        filename = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
 
         # Prepare text and voice options
         communicate = edge_tts.Communicate(
@@ -94,8 +98,8 @@ class JobManager:
         logger.info(f"Job {job_id}: TTS conversion saved to {filename}")
 
     async def _send_webhook(self, result: JobResult):
-        if not self.webhook_url:
-            logger.info("No webhook URL configured; skipping notification")
+        if not self.webhook_url or self.webhook_url.startswith("https://your-webhook"):
+            logger.info("No valid webhook URL configured; skipping notification")
             return
         async with aiohttp.ClientSession() as session:
             try:
@@ -112,4 +116,3 @@ class JobManager:
                         logger.info(f"Webhook notified for job {result.job_id}")
             except Exception as e:
                 logger.error(f"Failed to send webhook for job {result.job_id}: {e}")
-

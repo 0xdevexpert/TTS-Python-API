@@ -1,11 +1,11 @@
 
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import asyncio
-from queue_manager import JobManager, TTSRequest
+from queue_manager import JobManager, TTSRequest, AUDIO_DIR
 
 load_dotenv()
 
@@ -58,3 +58,16 @@ async def tts_endpoint(request: TTSRequestModel):
     )
     return TTSResponseModel(job_id=job_id)
 
+
+@app.get("/tts/audio/{job_id}")
+async def get_audio(job_id: str):
+    """Serve the generated audio file"""
+    audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
+    
+    if not os.path.exists(audio_path):
+        raise HTTPException(status_code=404, detail=f"Audio for job {job_id} not found or not ready yet")
+    
+    with open(audio_path, "rb") as f:
+        audio_data = f.read()
+    
+    return Response(content=audio_data, media_type="audio/mpeg")
