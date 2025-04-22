@@ -1,4 +1,3 @@
-
 import axios from 'axios';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -40,6 +39,17 @@ export const fetchTtsAudio = async (jobId) => {
   } catch (error) {
     console.error('Error fetching TTS audio:', error);
     throw new Error('Could not fetch audio from the server');
+  }
+};
+
+// New: Delete audio by job ID
+export const deleteTtsAudio = async (jobId) => {
+  try {
+    const response = await ttsApi.delete(`/tts/audio/${jobId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting TTS audio:', error);
+    throw new Error('Could not delete audio from the server');
   }
 };
 

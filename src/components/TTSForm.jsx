@@ -1,13 +1,11 @@
 
 import React, { useState } from 'react';
-import { convertTextToSpeech, fetchTtsAudio } from '../api/ttsApi';
+import { convertTextToSpeech, fetchTtsAudio, deleteTtsAudio } from '../api/ttsApi';
 import { Mic } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from "@/hooks/use-toast";
-import TTSAudioPlayer from './TTSAudioPlayer';
-import BackendStatusInfo from './BackendStatusInfo';
-import TTSJobStatusAlert from './TTSJobStatusAlert';
+import TTSJobList from './TTSJobList';
 
 import TTSFormMainFields from './TTSFormMainFields';
 import TTSFormSliders from './TTSFormSliders';
@@ -22,9 +20,7 @@ const TTSForm = () => {
     volume: '100',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [jobId, setJobId] = useState(null);
-  const [audioUrl, setAudioUrl] = useState(null);
-  const [fetchingAudio, setFetchingAudio] = useState(false);
+  const [jobs, setJobs] = useState([]);
   const [error, setError] = useState(null);
   const { toast } = useToast();
 
@@ -41,19 +37,22 @@ const TTSForm = () => {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
-    setJobId(null);
-    setAudioUrl(null);
 
     try {
       const response = await convertTextToSpeech(formData);
-      setJobId(response.job_id);
+      const newJob = {
+        jobId: response.job_id,
+        status: 'pending',
+        fetchingAudio: false,
+        audioUrl: null,
+        error: null,
+      };
+      setJobs(prevJobs => [newJob, ...prevJobs]);
       toast({
         title: "Success!",
         description: `Job submitted successfully. Job ID: ${response.job_id}`,
       });
-      setTimeout(() => fetchAudio(response.job_id), 2500);
     } catch (err) {
-      console.error("TTS Request failed:", err);
       setError(err.message || 'An error occurred while processing your request');
       toast({
         variant: "destructive",
@@ -65,23 +64,54 @@ const TTSForm = () => {
     }
   };
 
-  const fetchAudio = async (jid = jobId) => {
-    if (!jid) return;
-    setFetchingAudio(true);
-    setError(null);
-    setAudioUrl(null);
+  // Called by TTSJobListItem
+  const fetchAudioForJob = async (jobId) => {
+    setJobs(prevJobs =>
+      prevJobs.map(job =>
+        job.jobId === jobId
+          ? { ...job, fetchingAudio: true, error: null }
+          : job
+      )
+    );
+
     try {
-      const audioBlob = await fetchTtsAudio(jid);
+      const audioBlob = await fetchTtsAudio(jobId);
       const url = URL.createObjectURL(audioBlob);
-      setAudioUrl(url);
+
+      setJobs(prevJobs =>
+        prevJobs.map(job =>
+          job.jobId === jobId
+            ? { ...job, audioUrl: url, status: 'ready', fetchingAudio: false, error: null }
+            : job
+        )
+      );
       toast({
         title: "Audio Ready!",
         description: "You can now listen to your synthesized speech.",
       });
     } catch (err) {
-      setError("The audio is not ready yet. Please try again in a moment.");
-    } finally {
-      setFetchingAudio(false);
+      setJobs(prevJobs =>
+        prevJobs.map(job =>
+          job.jobId === jobId
+            ? { ...job, audioUrl: null, fetchingAudio: false, error: "The audio is not ready yet. Please try again in a moment." }
+            : job
+        )
+      );
+    }
+  };
+
+  // Remove job from state + attempt backend delete
+  const removeJob = async (jobId) => {
+    setJobs(prevJobs => prevJobs.filter(job => job.jobId !== jobId));
+    try {
+      await deleteTtsAudio(jobId);
+      toast({ title: "Job Deleted", description: "Audio file and job removed." });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Delete Failed",
+        description: err?.message || "Could not delete job audio.",
+      });
     }
   };
 
@@ -115,20 +145,17 @@ const TTSForm = () => {
             </Alert>
           )}
 
-          {jobId && (
-            <TTSJobStatusAlert 
-              jobId={jobId}
-              fetchingAudio={fetchingAudio}
-              audioUrl={audioUrl}
-              onFetchAudio={fetchAudio}
-            />
-          )}
-
           <TTSFormActions
             isSubmitting={isSubmitting}
             formData={formData}
           />
+
         </form>
+        <TTSJobList
+          jobs={jobs}
+          onFetchAudio={fetchAudioForJob}
+          onRemoveJob={removeJob}
+        />
       </CardContent>
     </Card>
   );
