@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { convertTextToSpeech, fetchTtsAudio } from '../api/ttsApi';
 import { Mic, SlidersVertical, Volume2 } from 'lucide-react';
@@ -12,6 +11,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from "@/hooks/use-toast";
+import TTSAudioPlayer from './TTSAudioPlayer';
+import BackendStatusInfo from './BackendStatusInfo';
+import TTSJobStatusAlert from './TTSJobStatusAlert';
 
 const TTSForm = () => {
   const [formData, setFormData] = useState({
@@ -66,7 +68,6 @@ const TTSForm = () => {
     }
   };
 
-  // Fetch audio blob and create a URL for <audio> tag
   const fetchAudio = async (jid = jobId) => {
     if (!jid) return;
     setFetchingAudio(true);
@@ -126,6 +127,7 @@ const TTSForm = () => {
               onVoiceSelect={(voice) => setFormData({ ...formData, voice })}
             />
           </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -191,41 +193,15 @@ const TTSForm = () => {
           )}
 
           {jobId && (
-            <Alert className="bg-secondary text-secondary-foreground border-secondary">
-              <AlertTitle>Success</AlertTitle>
-              <AlertDescription>
-                <span className="font-medium">Job ID:</span> {jobId}
-                <p className="mt-1 text-xs">Your text-to-speech conversion is being processed.</p>
-                <div className="mt-2">
-                  <Button variant="outline" size="sm" type="button" disabled={fetchingAudio} onClick={() => fetchAudio(jobId)}>
-                    {fetchingAudio ? (
-                      <>
-                        <LoadingSpinner size="small" />
-                        <span className="ml-2">Fetching Audio...</span>
-                      </>
-                    ) : "Fetch & Play Audio"}
-                  </Button>
-                </div>
-                {audioUrl && (
-                  <div className="mt-4">
-                    <audio controls src={audioUrl} className="w-full">
-                      Your browser does not support the audio element.
-                    </audio>
-                  </div>
-                )}
-              </AlertDescription>
-            </Alert>
+            <TTSJobStatusAlert 
+              jobId={jobId}
+              fetchingAudio={fetchingAudio}
+              audioUrl={audioUrl}
+              onFetchAudio={fetchAudio}
+            />
           )}
 
-          <div className="bg-muted p-4 rounded-md mt-4">
-            <h4 className="font-medium mb-2">Connection Status</h4>
-            <p className="text-sm">
-              Backend URL: {import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Make sure your FastAPI backend is running with: <code>uvicorn main:app --reload</code>
-            </p>
-          </div>
+          <BackendStatusInfo />
 
           <Button 
             type="submit" 
