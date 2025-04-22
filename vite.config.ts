@@ -8,11 +8,6 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
-    allowedHosts: ['tts.catacomb.fyi'],
-    hmr: {
-      protocol: 'wss',
-      host: 'tts.catacomb.fyi',
-    },
   },
   plugins: [
     react(),
