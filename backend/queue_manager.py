@@ -67,28 +67,40 @@ class JobManager:
     async def _run_tts(self, tts_request: TTSRequest, job_id: str):
         # Generate output filename in the audio_files directory
         filename = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
-
-        # Prepare TTS parameters
+        
+        # Prepare standard parameters
         voice = tts_request.voice
         text = tts_request.text
-
-        # Create SSML for pitch, rate and volume modifications if needed
-        if tts_request.pitch != "0" or tts_request.speed != "1" or tts_request.volume != "100":
-            # Calculate values for SSML
-            pitch_value = f"{tts_request.pitch}Hz" if float(tts_request.pitch) > 0 else f"{tts_request.pitch}Hz"
-            speed_value = f"{int(float(tts_request.speed) * 100)}%"
-            volume_value = f"{tts_request.volume}%"
-            
-            # Format text as SSML
-            text = f"""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
-                <prosody pitch="{pitch_value}" rate="{speed_value}" volume="{volume_value}">{tts_request.text}</prosody>
-            </speak>"""
         
-        # Create communicator with text and voice
-        communicator = edge_tts.Communicate(text, voice)
+        # Create the communicate object with the voice and text
+        communicate = edge_tts.Communicate(text, voice)
         
-        # Edge-tts save method will write file asynchronously
-        await communicator.save(filename)
+        # Set rate, pitch and volume as optional parameters using proper edge-tts format
+        # Note: edge-tts uses command-line style parameters, not options dictionary
+        rate = None
+        if tts_request.speed != "1":
+            # Convert the speed multiplier to a percentage string for edge-tts
+            speed_percent = int(float(tts_request.speed) * 100)
+            rate = f"{speed_percent}%"
+        
+        pitch = None
+        if tts_request.pitch != "0":
+            # Format pitch properly with Hz units
+            pitch_value = float(tts_request.pitch)
+            pitch = f"+{pitch_value}Hz" if pitch_value > 0 else f"{pitch_value}Hz"
+        
+        volume = None
+        if tts_request.volume != "100":
+            volume = f"{tts_request.volume}%"
+        
+        # Use the communicate.save method with optional parameters for rate, pitch, and volume
+        await communicate.save(
+            filename,
+            rate=rate,
+            volume=volume,
+            pitch=pitch
+        )
+        
         logger.info(f"Job {job_id}: TTS conversion saved to {filename}")
 
     async def _send_webhook(self, result: JobResult):
