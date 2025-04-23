@@ -1,4 +1,3 @@
-
 import axios from 'axios';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://tts.catacomb.fyi';
@@ -71,6 +70,16 @@ export const deleteTtsAudio = async (jobId) => {
   } catch (error) {
     console.error('Error deleting TTS audio:', error);
     throw new Error('Could not delete audio from the server');
+  }
+};
+
+export const fetchAllJobs = async () => {
+  try {
+    const response = await ttsApi.get('/tts/jobs');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching jobs:', error);
+    throw new Error('Failed to fetch jobs');
   }
 };
 

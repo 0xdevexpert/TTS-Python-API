@@ -1,10 +1,11 @@
-
 import os
+import json
 from fastapi import FastAPI, HTTPException, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 from dotenv import load_dotenv
 import asyncio
+import datetime
 from queue_manager import JobManager, TTSRequest, AUDIO_DIR, JobStatus
 
 load_dotenv()
@@ -29,6 +30,23 @@ job_manager = JobManager(max_concurrent=MAX_CONCURRENT_REQUESTS, webhook_url=WEB
 @app.on_event("startup")
 async def startup_event():
     await job_manager.start()
+
+# File to store jobs data
+JOBS_FILE = "jobs_data.json"
+
+def load_jobs():
+    if os.path.exists(JOBS_FILE):
+        with open(JOBS_FILE, 'r') as f:
+            return json.load(f)
+    return []
+
+def save_jobs(jobs):
+    with open(JOBS_FILE, 'w') as f:
+        json.dump(jobs, f)
+
+# Initialize jobs data
+if not os.path.exists(JOBS_FILE):
+    save_jobs([])
 
 
 class TTSRequestModel(BaseModel):
@@ -56,6 +74,23 @@ class JobStatusResponse(BaseModel):
     status: str
     message: str = ""
 
+@app.get("/tts/jobs")
+async def get_all_jobs():
+    """Get all jobs from storage"""
+    try:
+        jobs = load_jobs()
+        # Check status for each job
+        for job in jobs:
+            status = job_manager.get_job_status(job['job_id'])
+            if status:
+                job['status'] = status.value
+            # Check if audio file exists
+            audio_path = os.path.join(AUDIO_DIR, f"{job['job_id']}.mp3")
+            job['audio_exists'] = os.path.exists(audio_path)
+        return jobs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/tts", response_model=TTSResponseModel)
 async def tts_endpoint(request: TTSRequestModel):
@@ -71,6 +106,18 @@ async def tts_endpoint(request: TTSRequestModel):
             volume=request.volume,
         )
     )
+    
+    # Add job to persistent storage
+    jobs = load_jobs()
+    job_data = {
+        "job_id": job_id,
+        "text": request.text[:100] + "..." if len(request.text) > 100 else request.text,
+        "created_at": str(datetime.datetime.now()),
+        "status": "processing"
+    }
+    jobs.append(job_data)
+    save_jobs(jobs)
+    
     return TTSResponseModel(job_id=job_id)
 
 
@@ -117,17 +164,22 @@ async def get_audio(job_id: str):
 
 @app.delete("/tts/audio/{job_id}")
 async def delete_audio(job_id: str, background_tasks: BackgroundTasks):
-    """Delete the generated audio file"""
+    """Delete the generated audio file and remove from jobs list"""
     audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
     
     if not os.path.exists(audio_path):
         raise HTTPException(status_code=404, detail=f"Audio for job {job_id} not found")
     
     try:
-        # Delete file immediately
+        # Remove file
         os.remove(audio_path)
         
-        # Clean up job from manager in the background
+        # Remove from jobs list
+        jobs = load_jobs()
+        jobs = [job for job in jobs if job['job_id'] != job_id]
+        save_jobs(jobs)
+        
+        # Clean up job from manager
         background_tasks.add_task(job_manager.cleanup_job, job_id)
         
         return {"message": f"Audio for job {job_id} deleted successfully"}

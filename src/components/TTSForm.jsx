@@ -1,12 +1,11 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { convertTextToSpeech, fetchTtsAudio, deleteTtsAudio, MAX_CHARACTERS } from '../api/ttsApi';
 import { Mic } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from "@/hooks/use-toast";
 import TTSJobList from './TTSJobList';
-
 import TTSFormMainFields from './TTSFormMainFields';
 import TTSFormSliders from './TTSFormSliders';
 import TTSFormActions from './TTSFormActions';
@@ -24,15 +23,38 @@ const TTSForm = () => {
   const [error, setError] = useState(null);
   const { toast } = useToast();
   const [characterCount, setCharacterCount] = useState(0);
+  const queryClient = useQueryClient();
+
+  const { data: existingJobs } = useQuery({
+    queryKey: ['jobs'],
+    queryFn: async () => {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/tts/jobs`);
+      if (!response.ok) throw new Error('Failed to fetch jobs');
+      return response.json();
+    },
+    refetchInterval: 1000,
+  });
+
+  useEffect(() => {
+    if (existingJobs) {
+      const processedJobs = existingJobs.map(job => ({
+        jobId: job.job_id,
+        status: job.status,
+        text: job.text,
+        fetchingAudio: false,
+        audioUrl: null,
+        error: null,
+      }));
+      setJobs(processedJobs);
+    }
+  }, [existingJobs]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     
-    // Update character count for text field
     if (name === 'text') {
       setCharacterCount(value.length);
       
-      // Show warning toast when approaching limit
       if (value.length > MAX_CHARACTERS * 0.9 && value.length <= MAX_CHARACTERS) {
         toast({
           title: "Warning",
@@ -54,7 +76,6 @@ const TTSForm = () => {
     setIsSubmitting(true);
     setError(null);
 
-    // Check character limit
     if (formData.text.length > MAX_CHARACTERS) {
       setError(`Text exceeds maximum limit of ${MAX_CHARACTERS} characters`);
       setIsSubmitting(false);
@@ -68,15 +89,7 @@ const TTSForm = () => {
 
     try {
       const response = await convertTextToSpeech(formData);
-      const newJob = {
-        jobId: response.job_id,
-        status: 'pending',
-        fetchingAudio: false,
-        audioUrl: null,
-        error: null,
-        text: formData.text.substring(0, 50) + (formData.text.length > 50 ? '...' : ''), // Store a preview of the text
-      };
-      setJobs(prevJobs => [newJob, ...prevJobs]);
+      queryClient.invalidateQueries(['jobs']);
       toast({
         title: "Success!",
         description: `Job submitted successfully. Job ID: ${response.job_id}`,
@@ -93,7 +106,6 @@ const TTSForm = () => {
     }
   };
 
-  // Called by TTSJobListItem
   const fetchAudioForJob = async (jobId) => {
     setJobs(prevJobs =>
       prevJobs.map(job =>
@@ -134,11 +146,10 @@ const TTSForm = () => {
     }
   };
 
-  // Remove job from state + attempt backend delete
   const removeJob = async (jobId) => {
     try {
       await deleteTtsAudio(jobId);
-      setJobs(prevJobs => prevJobs.filter(job => job.jobId !== jobId));
+      queryClient.invalidateQueries(['jobs']);
       toast({ title: "Job Deleted", description: "Audio file and job removed successfully." });
     } catch (err) {
       toast({
