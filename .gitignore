@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+#Backend Files
+/backend/__pycache__/
+/backend/audio_files/
+/backend/job_management/__pycache__/
+/backend/jobs_data.json

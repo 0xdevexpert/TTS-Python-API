@@ -4,12 +4,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from job_management import JobManager
 from routes import router, initialize_router
+from urllib.parse import urlparse
 
 load_dotenv()
 
 # Configuration from environment variables
 MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', '50'))
 WEBHOOK_URL = os.getenv('WEBHOOK_URL', '')
+
+# Validate WEBHOOK_URL
+if WEBHOOK_URL:
+    parsed_url = urlparse(WEBHOOK_URL)
+    if not all([parsed_url.scheme, parsed_url.netloc]):
+        raise ValueError(f"Invalid WEBHOOK_URL: {WEBHOOK_URL}")
+else:
+    print("Warning: WEBHOOK_URL is not set. Some features may not work as expected.")
 
 # Initialize FastAPI with connection pooling
 app = FastAPI(
@@ -21,7 +30,7 @@ app = FastAPI(
 # Allow CORS from frontend with optimized settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure for production
+    allow_origins=["http://localhost:8080"],  # Configure for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

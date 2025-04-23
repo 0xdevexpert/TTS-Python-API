@@ -1,4 +1,3 @@
-
 import asyncio
 import uuid
 import logging
@@ -67,7 +66,7 @@ class JobManager:
     async def _process_job(self, job_info: JobInfo):
         job_info.start_time = time.time()
         job_info.status = JobStatus.PROCESSING
-        
+
         try:
             logger.info(f"Processing job {job_info.job_id} (waiting time: {job_info.start_time - job_info.created_at:.2f}s)")
             await process_tts_request(
@@ -79,25 +78,14 @@ class JobManager:
                 job_info.request.volume
             )
             job_info.status = JobStatus.COMPLETED
-            result = JobResult(
-                job_id=job_info.job_id, 
-                status="success", 
-                processing_time=job_info.processing_time
-            )
-            logger.info(f"Job {job_info.job_id} completed in {job_info.processing_time:.2f}s")
+            logger.info(f"Job {job_info.job_id} completed successfully.")
         except Exception as e:
-            logger.error(f"Job {job_info.job_id} failed: {e}")
-            job_info.status = JobStatus.FAILED
-            job_info.error_message = str(e)
-            result = JobResult(
-                job_id=job_info.job_id, 
-                status="failure", 
-                message=str(e),
-                processing_time=job_info.processing_time
-            )
+            logger.error(f"Job {job_info.job_id} encountered an error: {e}")
+            # Retry logic: Requeue the job for processing
+            logger.info(f"Retrying job {job_info.job_id}...")
+            await self.queue.put((100, job_info))
         finally:
             job_info.end_time = time.time()
-            await send_webhook(self.webhook_url, result)
             self.semaphore.release()
 
     async def _cleanup_old_jobs(self):

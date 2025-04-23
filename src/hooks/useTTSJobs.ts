@@ -8,7 +8,7 @@ import { Job } from '../types/job';
 export const useTTSJobs = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const { toast } = useToast();
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+  const apiBaseUrl =  "http://localhost:8000";
 
   // Use more frequent polling since we removed WebSocket
   const { data: existingJobs, isError } = useQuery({

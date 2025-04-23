@@ -17,17 +17,21 @@ def initialize_router(manager: JobManager):
 async def get_all_jobs():
     """Get all jobs from storage with caching"""
     try:
-        jobs = load_jobs()
-        recent_jobs = [job for job in jobs if datetime.datetime.fromisoformat(job.get('created_at', '2000-01-01')).timestamp() > 
-                      (datetime.datetime.now().timestamp() - 3600)]  # Last hour only
-        
+        jobs = load_jobs()  # Dynamically fetch and update job statuses
+        recent_jobs = [
+            job for job in jobs
+            if datetime.datetime.fromisoformat(job.get('created_at', '2000-01-01')).timestamp() >
+            (datetime.datetime.now().timestamp() - 3600)  # Last hour only
+        ]
+
         for job in recent_jobs:
             status = job_manager.get_job_status(job['job_id'])
             if status:
                 job['status'] = status.value
             audio_path = os.path.join(AUDIO_DIR, f"{job['job_id']}.mp3")
             job['audio_exists'] = os.path.exists(audio_path)
-        return jobs
+
+        return recent_jobs
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -122,11 +126,29 @@ async def delete_audio(job_id: str, background_tasks: BackgroundTasks):
 @router.get("/health")
 async def health_check():
     """Health check endpoint for load balancers with system statistics"""
-    return {
-        "status": "healthy", 
-        "jobs_in_queue": job_manager.get_queue_size(),
-        "server_time": datetime.datetime.now().isoformat(),
-        "memory_usage": {
-            "jobs_cache_size": len(JOBS_CACHE)
+    try:
+        # Load cached jobs
+        cached_jobs = load_jobs()
+        jobs_cache_size = len(cached_jobs)
+
+        # Include audio files not in cached jobs
+        audio_files = set(os.listdir(AUDIO_DIR))
+        audio_jobs_count = sum(1 for file in audio_files if file.endswith(".mp3"))
+        jobs_cache_size = max(jobs_cache_size, audio_jobs_count)
+
+        # Get active jobs in the queue
+        active_jobs_size = job_manager.get_queue_size()
+
+        return {
+            "status": "healthy",
+            "jobs_cache_size": jobs_cache_size,
+            "active_jobs_size": active_jobs_size,
+            "message": "System is operational"
         }
-    }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "jobs_cache_size": 0,
+            "active_jobs_size": 0,
+            "message": f"Error: {str(e)}"
+        }
