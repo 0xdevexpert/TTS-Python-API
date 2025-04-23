@@ -1,6 +1,7 @@
 
 import React from 'react';
 import TTSForm from '../components/TTSForm';
+import TTSHealthDashboard from '../components/TTSHealthDashboard';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ExternalLink } from 'lucide-react';
 import { MAX_CHARACTERS } from '../api/ttsApi';
@@ -13,6 +14,10 @@ const Home = () => {
         <p className="text-muted-foreground mt-2">
           Convert your text to natural-sounding speech with customizable voice settings
         </p>
+      </div>
+      
+      <div className="mb-6">
+        <TTSHealthDashboard />
       </div>
       
       <Alert className="mb-6 bg-secondary/30">
