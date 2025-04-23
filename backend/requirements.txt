@@ -1,4 +1,7 @@
+
 aiohttp
 edge-tts
 pydantic
 uvicorn
+python-socketio>=5.8.0
+python-dotenv
