@@ -30,7 +30,7 @@ app = FastAPI(
 # Allow CORS from frontend with optimized settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080"],  # Configure for production
+    allow_origins=["http://localhost:8080", "https://vocal-craft-orchestrator.vercel.app"],  # Configure for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

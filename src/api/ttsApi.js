@@ -1,7 +1,7 @@
 
 import axios from 'axios';
 
-const apiBaseUrl =  'http://localhost:8000';
+const apiBaseUrl =  'https://tts.catacomb.fyi';
 const MAX_TEXT_LENGTH = 14000; // Maximum character limit
 
 const ttsApi = axios.create({
