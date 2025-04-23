@@ -3,7 +3,6 @@ import os
 import json
 from fastapi import FastAPI, HTTPException, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-import socketio
 from pydantic import BaseModel, Field, validator
 from dotenv import load_dotenv
 import asyncio
@@ -17,21 +16,10 @@ MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', '50'))
 WEBHOOK_URL = os.getenv('WEBHOOK_URL', '')
 MAX_TEXT_LENGTH = int(os.getenv('MAX_TEXT_LENGTH', '14000'))
 
-# Initialize Socket.IO with performance optimizations
-sio = socketio.AsyncServer(
-    async_mode='asgi',
-    cors_allowed_origins=['*'],
-    ping_interval=30,  # Optimized heartbeat interval
-    ping_timeout=60,   # Longer timeout for connection stability
-    max_http_buffer_size=1e6  # 1MB buffer for large messages
-)
-socket_app = socketio.ASGIApp(sio)
-
 # Initialize FastAPI with connection pooling
 app = FastAPI(title="TTS API", 
               description="High-performance Text-to-Speech API",
               version="1.0.0")
-app.mount('/ws', socket_app)  # Mount Socket.IO app
 
 # Allow CORS from frontend with optimized settings
 app.add_middleware(
@@ -45,23 +33,6 @@ app.add_middleware(
 
 # Initialize job manager with concurrency control
 job_manager = JobManager(max_concurrent=MAX_CONCURRENT_REQUESTS, webhook_url=WEBHOOK_URL)
-
-# Connection event handlers with client tracking
-connected_clients = set()
-
-@sio.on('connect')
-async def connect(sid, environ):
-    connected_clients.add(sid)
-    print(f"Client connected: {sid}. Total clients: {len(connected_clients)}")
-
-@sio.on('disconnect')
-async def disconnect(sid):
-    connected_clients.discard(sid)
-    print(f"Client disconnected: {sid}. Total clients: {len(connected_clients)}")
-
-async def notify_job_completion(job_id: str, status: str):
-    """Notify clients when a job is complete with backoff for high traffic"""
-    await sio.emit('job_status_update', {'job_id': job_id, 'status': status})
 
 # File to store jobs data with optimized file operations
 JOBS_FILE = "jobs_data.json"
@@ -109,7 +80,6 @@ if not os.path.exists(JOBS_FILE):
     with open(JOBS_FILE, 'w') as f:
         json.dump([], f)
 
-
 class TTSRequestModel(BaseModel):
     text: str
     voice: str = "en-US-AriaNeural"
@@ -125,10 +95,8 @@ class TTSRequestModel(BaseModel):
             raise ValueError("Text cannot be empty")
         return v
 
-
 class TTSResponseModel(BaseModel):
     job_id: str
-
 
 class JobStatusResponse(BaseModel):
     job_id: str
@@ -154,7 +122,6 @@ async def get_all_jobs():
         return jobs
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/tts", response_model=TTSResponseModel)
 async def tts_endpoint(request: TTSRequestModel, background_tasks: BackgroundTasks):
@@ -182,33 +149,7 @@ async def tts_endpoint(request: TTSRequestModel, background_tasks: BackgroundTas
     jobs.append(job_data)
     background_tasks.add_task(save_jobs_async, jobs)
     
-    # Schedule status check and notification
-    background_tasks.add_task(monitor_job_status, job_id)
-    
     return TTSResponseModel(job_id=job_id)
-
-
-async def monitor_job_status(job_id: str):
-    """Monitor job status and notify clients when complete with backoff strategy"""
-    retries = 0
-    max_retries = 60  # 10 minutes maximum monitoring time
-    backoff_factor = 1.5
-    check_interval = 1  # Start with 1 second
-    
-    while retries < max_retries:
-        status = job_manager.get_job_status(job_id)
-        if status == JobStatus.COMPLETED:
-            await notify_job_completion(job_id, "completed")
-            break
-        elif status == JobStatus.FAILED:
-            await notify_job_completion(job_id, "failed")
-            break
-            
-        # Exponential backoff with cap
-        retries += 1
-        check_interval = min(check_interval * backoff_factor, 10)  # Cap at 10 seconds
-        await asyncio.sleep(check_interval)
-
 
 @app.get("/tts/status/{job_id}", response_model=JobStatusResponse)
 async def get_job_status(job_id: str):
@@ -226,7 +167,6 @@ async def get_job_status(job_id: str):
         status=status.value,
         message="Audio is being processed" if status == JobStatus.PROCESSING else "Audio is ready"
     )
-
 
 @app.get("/tts/audio/{job_id}")
 async def get_audio(job_id: str):
@@ -254,7 +194,6 @@ async def get_audio(job_id: str):
             raise e
         raise HTTPException(status_code=500, detail=f"Error reading audio file: {str(e)}")
 
-
 @app.delete("/tts/audio/{job_id}")
 async def delete_audio(job_id: str, background_tasks: BackgroundTasks):
     """Delete the generated audio file and remove from jobs list"""
@@ -279,14 +218,12 @@ async def delete_audio(job_id: str, background_tasks: BackgroundTasks):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete audio: {str(e)}")
 
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint for load balancers with system statistics"""
     return {
         "status": "healthy", 
         "jobs_in_queue": job_manager.get_queue_size(),
-        "connected_clients": len(connected_clients),
         "server_time": datetime.datetime.now().isoformat(),
         "memory_usage": {
             "jobs_cache_size": len(JOBS_CACHE)
