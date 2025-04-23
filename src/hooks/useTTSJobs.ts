@@ -9,7 +9,7 @@ export const useTTSJobs = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const { toast } = useToast();
 
-  // Use a longer stale time and shorter refetch interval for efficiency
+  // Use more frequent polling since we removed WebSocket
   const { data: existingJobs, isError } = useQuery({
     queryKey: ['jobs'],
     queryFn: async () => {
@@ -17,12 +17,13 @@ export const useTTSJobs = () => {
       if (!response.ok) throw new Error('Failed to fetch jobs');
       return response.json();
     },
-    staleTime: 2000, // Data remains fresh for 2 seconds
-    refetchInterval: 3000, // Refetch every 3 seconds
-    retry: 3, // Retry failed requests up to 3 times
+    staleTime: 1000, // Consider data fresh for 1 second
+    refetchInterval: 2000, // Poll every 2 seconds
+    retry: 3,
     retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 10000),
   });
 
+  // Update jobs state when we get new data
   useEffect(() => {
     if (existingJobs) {
       const processedJobs = existingJobs.map(job => ({
@@ -37,6 +38,7 @@ export const useTTSJobs = () => {
     }
   }, [existingJobs]);
 
+  // Show error toast if fetch fails
   useEffect(() => {
     if (isError) {
       toast({
@@ -59,7 +61,7 @@ export const useTTSJobs = () => {
     try {
       const audioBlob = await fetchTtsAudio(jobId);
       const url = URL.createObjectURL(audioBlob);
-
+      
       setJobs(prevJobs =>
         prevJobs.map(job =>
           job.jobId === jobId
@@ -75,7 +77,7 @@ export const useTTSJobs = () => {
       setJobs(prevJobs =>
         prevJobs.map(job =>
           job.jobId === jobId
-            ? { ...job, audioUrl: null, fetchingAudio: false, error: err.message || "The audio is not ready yet. Please try again in a moment." }
+            ? { ...job, audioUrl: null, fetchingAudio: false, error: err.message }
             : job
         )
       );
@@ -90,7 +92,6 @@ export const useTTSJobs = () => {
   const removeJob = useCallback(async (jobId: string) => {
     try {
       await deleteTtsAudio(jobId);
-      // Update local state immediately for responsiveness
       setJobs(prevJobs => prevJobs.filter(job => job.jobId !== jobId));
       toast({ title: "Job Deleted", description: "Audio file and job removed successfully." });
     } catch (err: any) {
