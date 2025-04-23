@@ -1,7 +1,7 @@
 
 import axios from 'axios';
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://tts.catacomb.fyi';
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 const MAX_TEXT_LENGTH = 14000; // Maximum character limit
 
 const ttsApi = axios.create({

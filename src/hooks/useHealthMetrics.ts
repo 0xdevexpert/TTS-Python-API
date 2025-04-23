@@ -13,11 +13,14 @@ interface HealthMetrics {
 }
 
 export const useHealthMetrics = () => {
+  // Get the API base URL from environment
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+  
   return useQuery({
     queryKey: ["health"],
     queryFn: async (): Promise<HealthMetrics> => {
       try {
-        const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/health`, {
+        const response = await axios.get(`${apiBaseUrl}/health`, {
           timeout: 5000 // Shorter timeout for health checks (5 seconds)
         });
         return response.data;

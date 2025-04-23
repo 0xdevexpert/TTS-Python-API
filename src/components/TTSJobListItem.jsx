@@ -4,7 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import TTSAudioPlayer from "./TTSAudioPlayer";
 import LoadingSpinner from "./LoadingSpinner";
-import { Loader, CheckCircle } from "lucide-react";
+import { Loader, CheckCircle, WifiOff } from "lucide-react";
 
 const TTSJobListItem = ({ job, onFetchAudio, onRemove }) => {
   // Determine if the fetch button should be disabled
