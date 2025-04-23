@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { convertTextToSpeech, fetchTtsAudio, deleteTtsAudio } from '../api/ttsApi';
+import { convertTextToSpeech, fetchTtsAudio, deleteTtsAudio, MAX_CHARACTERS } from '../api/ttsApi';
 import { Mic } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -22,9 +23,25 @@ const TTSForm = () => {
   const [jobs, setJobs] = useState([]);
   const [error, setError] = useState(null);
   const { toast } = useToast();
+  const [characterCount, setCharacterCount] = useState(0);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    
+    // Update character count for text field
+    if (name === 'text') {
+      setCharacterCount(value.length);
+      
+      // Show warning toast when approaching limit
+      if (value.length > MAX_CHARACTERS * 0.9 && value.length <= MAX_CHARACTERS) {
+        toast({
+          title: "Warning",
+          description: `Approaching character limit (${value.length}/${MAX_CHARACTERS})`,
+          variant: "warning",
+        });
+      }
+    }
+    
     setFormData({ ...formData, [name]: value });
   };
 
@@ -37,6 +54,18 @@ const TTSForm = () => {
     setIsSubmitting(true);
     setError(null);
 
+    // Check character limit
+    if (formData.text.length > MAX_CHARACTERS) {
+      setError(`Text exceeds maximum limit of ${MAX_CHARACTERS} characters`);
+      setIsSubmitting(false);
+      toast({
+        variant: "destructive",
+        title: "Character Limit Exceeded",
+        description: `Please reduce your text to ${MAX_CHARACTERS} characters or less.`,
+      });
+      return;
+    }
+
     try {
       const response = await convertTextToSpeech(formData);
       const newJob = {
@@ -45,6 +74,7 @@ const TTSForm = () => {
         fetchingAudio: false,
         audioUrl: null,
         error: null,
+        text: formData.text.substring(0, 50) + (formData.text.length > 50 ? '...' : ''), // Store a preview of the text
       };
       setJobs(prevJobs => [newJob, ...prevJobs]);
       toast({
@@ -92,19 +122,24 @@ const TTSForm = () => {
       setJobs(prevJobs =>
         prevJobs.map(job =>
           job.jobId === jobId
-            ? { ...job, audioUrl: null, fetchingAudio: false, error: "The audio is not ready yet. Please try again in a moment." }
+            ? { ...job, audioUrl: null, fetchingAudio: false, error: err.message || "The audio is not ready yet. Please try again in a moment." }
             : job
         )
       );
+      toast({
+        variant: "destructive",
+        title: "Audio Not Ready",
+        description: err.message || "The audio is not ready yet. Please try again in a moment.",
+      });
     }
   };
 
   // Remove job from state + attempt backend delete
   const removeJob = async (jobId) => {
-    setJobs(prevJobs => prevJobs.filter(job => job.jobId !== jobId));
     try {
       await deleteTtsAudio(jobId);
-      toast({ title: "Job Deleted", description: "Audio file and job removed." });
+      setJobs(prevJobs => prevJobs.filter(job => job.jobId !== jobId));
+      toast({ title: "Job Deleted", description: "Audio file and job removed successfully." });
     } catch (err) {
       toast({
         variant: "destructive",
@@ -123,6 +158,11 @@ const TTSForm = () => {
         </div>
         <CardDescription>
           Enter your text and customize voice settings
+          {characterCount > 0 && (
+            <span className={`ml-1 ${characterCount > MAX_CHARACTERS ? 'text-destructive font-bold' : ''}`}>
+              ({characterCount}/{MAX_CHARACTERS} characters)
+            </span>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -131,6 +171,7 @@ const TTSForm = () => {
             formData={formData}
             handleInputChange={handleInputChange}
             setFormData={setFormData}
+            maxChars={MAX_CHARACTERS}
           />
           <TTSFormSliders
             formData={formData}
@@ -147,6 +188,7 @@ const TTSForm = () => {
           <TTSFormActions
             isSubmitting={isSubmitting}
             formData={formData}
+            maxChars={MAX_CHARACTERS}
           />
 
         </form>
