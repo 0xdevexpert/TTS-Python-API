@@ -1,10 +1,10 @@
-
 import os
 import datetime
 from fastapi import APIRouter, HTTPException, Response, BackgroundTasks
 from .models import TTSRequestModel, TTSResponseModel, JobStatusResponse
 from .storage import load_jobs, save_jobs_async
-from .queue_manager import JobManager, JobStatus, TTSRequest, AUDIO_DIR
+from .job_management import JobManager, JobStatus, TTSRequest
+from .job_management.tts_processor import AUDIO_DIR
 
 router = APIRouter()
 job_manager = None
@@ -130,4 +130,3 @@ async def health_check():
             "jobs_cache_size": len(JOBS_CACHE)
         }
     }
-
