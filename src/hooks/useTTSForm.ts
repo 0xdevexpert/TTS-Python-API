@@ -13,12 +13,12 @@ export const useTTSForm = () => {
     volume: '100',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [characterCount, setCharacterCount] = useState(0);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     
     if (name === 'text') {
@@ -28,7 +28,6 @@ export const useTTSForm = () => {
         toast({
           title: "Warning",
           description: `Approaching character limit (${value.length}/${MAX_CHARACTERS})`,
-          variant: "warning",
         });
       }
     }
@@ -36,11 +35,11 @@ export const useTTSForm = () => {
     setFormData({ ...formData, [name]: value });
   };
 
-  const handleSliderChange = (name, value) => {
+  const handleSliderChange = (name: string, value: number[]) => {
     setFormData({ ...formData, [name]: value[0].toString() });
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
@@ -58,12 +57,12 @@ export const useTTSForm = () => {
 
     try {
       const response = await convertTextToSpeech(formData);
-      queryClient.invalidateQueries(['jobs']);
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
       toast({
         title: "Success!",
         description: `Job submitted successfully. Job ID: ${response.job_id}`,
       });
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message || 'An error occurred while processing your request');
       toast({
         variant: "destructive",
