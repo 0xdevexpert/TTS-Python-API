@@ -54,13 +54,36 @@ export const convertTextToSpeech = async (ttsData) => {
   }
 };
 
-// Improved fetch audio function with complete audio verification
+// Improved fetch audio function with retry mechanism and more detailed status checking
 export const fetchTtsAudio = async (jobId) => {
   try {
-    // First check if the audio is ready
-    const statusCheck = await ttsApi.get(`/tts/status/${jobId}`);
-    if (statusCheck.data.status !== 'completed') {
-      throw new Error('Audio processing is not complete yet');
+    // Implement a retry strategy for status checks
+    let retries = 0;
+    const maxRetries = 3;
+    let statusCheck;
+    
+    while (retries < maxRetries) {
+      try {
+        // Check if the audio is ready
+        statusCheck = await ttsApi.get(`/tts/status/${jobId}`);
+        
+        if (statusCheck.data.status === 'completed') {
+          break; // Audio is ready, proceed to download
+        } else {
+          // If not ready, wait and retry
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          retries++;
+          
+          if (retries === maxRetries) {
+            throw new Error(`Audio processing is not complete yet. Current status: ${statusCheck.data.status}`);
+          }
+        }
+      } catch (statusError) {
+        if (statusError.response?.status === 404) {
+          throw new Error('Job not found. It may have been deleted or expired.');
+        }
+        throw statusError;
+      }
     }
     
     // Get audio as blob (audio/mpeg or wav)
@@ -79,7 +102,7 @@ export const fetchTtsAudio = async (jobId) => {
     if (error.response?.status === 404) {
       throw new Error('Audio file not found. The job may still be processing.');
     }
-    throw new Error(error.message || 'Could not fetch audio from the server');
+    throw error;
   }
 };
 

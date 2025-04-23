@@ -59,6 +59,9 @@ export const useTTSJobs = () => {
     );
 
     try {
+      // Add a delay to ensure backend has time to process
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       const audioBlob = await fetchTtsAudio(jobId);
       const url = URL.createObjectURL(audioBlob);
       
