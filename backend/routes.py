@@ -1,10 +1,10 @@
 import os
 import datetime
 from fastapi import APIRouter, HTTPException, Response, BackgroundTasks
-from .models import TTSRequestModel, TTSResponseModel, JobStatusResponse
-from .storage import load_jobs, save_jobs_async
-from .job_management import JobManager, JobStatus, TTSRequest
-from .job_management.tts_processor import AUDIO_DIR
+from models import TTSRequestModel, TTSResponseModel, JobStatusResponse
+from storage import load_jobs, save_jobs_async
+from job_management import JobManager, JobStatus, TTSRequest
+from job_management.tts_processor import AUDIO_DIR
 
 router = APIRouter()
 job_manager = None

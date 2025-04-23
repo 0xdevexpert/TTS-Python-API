@@ -1,3 +1,3 @@
 
-from .job_manager import JobManager
-from .models import JobStatus, TTSRequest, JobResult, JobInfo
+from job_management.job_manager import JobManager
+from job_management.models import JobStatus, TTSRequest, JobResult, JobInfo

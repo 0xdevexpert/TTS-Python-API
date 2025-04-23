@@ -1,9 +1,8 @@
-
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from queue_manager import JobManager
+from job_management import JobManager
 from routes import router, initialize_router
 
 load_dotenv()
@@ -37,4 +36,3 @@ initialize_router(job_manager)
 
 # Include the router
 app.include_router(router)
-

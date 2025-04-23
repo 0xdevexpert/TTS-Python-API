@@ -1,7 +1,6 @@
-
 import logging
 import aiohttp
-from .models import JobResult
+from job_management.models import JobResult
 
 logger = logging.getLogger(__name__)
 
