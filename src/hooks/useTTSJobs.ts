@@ -1,21 +1,26 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchTtsAudio, deleteTtsAudio } from '../api/ttsApi';
 import { useToast } from "@/hooks/use-toast";
+import { Job } from '../types/job';
 
 export const useTTSJobs = () => {
-  const [jobs, setJobs] = useState([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const { toast } = useToast();
 
-  const { data: existingJobs } = useQuery({
+  // Use a longer stale time and shorter refetch interval for efficiency
+  const { data: existingJobs, isError } = useQuery({
     queryKey: ['jobs'],
     queryFn: async () => {
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/tts/jobs`);
       if (!response.ok) throw new Error('Failed to fetch jobs');
       return response.json();
     },
-    refetchInterval: 1000,
+    staleTime: 2000, // Data remains fresh for 2 seconds
+    refetchInterval: 3000, // Refetch every 3 seconds
+    retry: 3, // Retry failed requests up to 3 times
+    retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 10000),
   });
 
   useEffect(() => {
@@ -32,7 +37,17 @@ export const useTTSJobs = () => {
     }
   }, [existingJobs]);
 
-  const fetchAudioForJob = async (jobId) => {
+  useEffect(() => {
+    if (isError) {
+      toast({
+        variant: "destructive",
+        title: "Connection Error",
+        description: "Failed to load job data. Will retry automatically.",
+      });
+    }
+  }, [isError, toast]);
+
+  const fetchAudioForJob = useCallback(async (jobId: string) => {
     setJobs(prevJobs =>
       prevJobs.map(job =>
         job.jobId === jobId
@@ -56,7 +71,7 @@ export const useTTSJobs = () => {
         title: "Audio Ready!",
         description: "You can now listen to your synthesized speech.",
       });
-    } catch (err) {
+    } catch (err: any) {
       setJobs(prevJobs =>
         prevJobs.map(job =>
           job.jobId === jobId
@@ -70,20 +85,22 @@ export const useTTSJobs = () => {
         description: err.message || "The audio is not ready yet. Please try again in a moment.",
       });
     }
-  };
+  }, [toast]);
 
-  const removeJob = async (jobId) => {
+  const removeJob = useCallback(async (jobId: string) => {
     try {
       await deleteTtsAudio(jobId);
+      // Update local state immediately for responsiveness
+      setJobs(prevJobs => prevJobs.filter(job => job.jobId !== jobId));
       toast({ title: "Job Deleted", description: "Audio file and job removed successfully." });
-    } catch (err) {
+    } catch (err: any) {
       toast({
         variant: "destructive",
         title: "Delete Failed",
         description: err?.message || "Could not delete job audio.",
       });
     }
-  };
+  }, [toast]);
 
   return {
     jobs,

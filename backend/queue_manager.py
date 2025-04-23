@@ -10,6 +10,14 @@ import aiohttp
 import edge_tts
 from pydantic import BaseModel
 
+# Configure logging for high-traffic scenarios
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # Create a directory for storing audio files
@@ -45,27 +53,38 @@ class JobInfo:
         self.start_time: Optional[float] = None
         self.end_time: Optional[float] = None
         self.error_message: Optional[str] = None
+        self.created_at = time.time()
 
     @property
     def processing_time(self) -> Optional[float]:
         if self.start_time and self.end_time:
             return self.end_time - self.start_time
         return None
+        
+    @property
+    def age(self) -> float:
+        """Return age of job in seconds"""
+        return time.time() - self.created_at
 
 
 class JobManager:
     def __init__(self, max_concurrent: int, webhook_url: str):
         self.max_concurrent = max_concurrent
         self.webhook_url = webhook_url
-        self.queue = asyncio.Queue()
+        self.queue = asyncio.PriorityQueue()  # Priority queue for job scheduling
         self.semaphore = asyncio.Semaphore(self.max_concurrent)
         self.running = False
         self.jobs: Dict[str, JobInfo] = {}
-        self.cleanup_interval = 3600  # 1 hour cleanup interval for completed jobs
+        self.cleanup_interval = 1800  # 30 min cleanup interval (reduced from 1 hour)
+        self.job_priority_threshold = 300  # Jobs older than 5 minutes get priority
+        
+        # Start the manager automatically
+        asyncio.create_task(self.start())
 
     async def start(self):
         if not self.running:
             self.running = True
+            logger.info(f"Starting job manager with {self.max_concurrent} concurrent jobs")
             asyncio.create_task(self._worker())
             asyncio.create_task(self._cleanup_old_jobs())
 
@@ -73,7 +92,11 @@ class JobManager:
         job_id = str(uuid.uuid4())
         job_info = JobInfo(job_id=job_id, request=tts_request)
         self.jobs[job_id] = job_info
-        await self.queue.put(job_info)
+        
+        # Queue with priority 100 (normal priority)
+        # Lower numbers = higher priority
+        await self.queue.put((100, job_info))
+        logger.info(f"Added job {job_id} to queue. Current queue size: {self.queue.qsize()}")
         return job_id
 
     def get_job_status(self, job_id: str) -> Optional[JobStatus]:
@@ -84,17 +107,32 @@ class JobManager:
         return self.queue.qsize()
 
     async def _worker(self):
+        logger.info("Worker started")
         while True:
-            job_info = await self.queue.get()
+            _, job_info = await self.queue.get()
+            
+            # Check if job is still valid (not cleaned up)
+            if job_info.job_id not in self.jobs:
+                self.queue.task_done()
+                continue
+                
+            # Re-prioritize old jobs that haven't been processed yet
+            if job_info.status == JobStatus.QUEUED and job_info.age > self.job_priority_threshold:
+                # Re-queue with higher priority and try again
+                await self.queue.put((50, job_info))
+                self.queue.task_done()
+                continue
+                
             await self.semaphore.acquire()
             asyncio.create_task(self._process_job(job_info))
+            self.queue.task_done()
 
     async def _process_job(self, job_info: JobInfo):
         job_info.start_time = time.time()
         job_info.status = JobStatus.PROCESSING
         
         try:
-            logger.info(f"Processing job {job_info.job_id}")
+            logger.info(f"Processing job {job_info.job_id} (waiting time: {job_info.start_time - job_info.created_at:.2f}s)")
             await self._run_tts(job_info.request, job_info.job_id)
             job_info.status = JobStatus.COMPLETED
             result = JobResult(
@@ -102,6 +140,7 @@ class JobManager:
                 status="success", 
                 processing_time=job_info.processing_time
             )
+            logger.info(f"Job {job_info.job_id} completed in {job_info.processing_time:.2f}s")
         except Exception as e:
             logger.error(f"Job {job_info.job_id} failed: {e}")
             job_info.status = JobStatus.FAILED
@@ -144,18 +183,21 @@ class JobManager:
             pitch=pitch_value
         )
         
-        # Save audio to file
-        await communicate.save(filename)
-        
-        # Verify the file was created and has content
-        if not os.path.exists(filename) or os.path.getsize(filename) == 0:
-            raise Exception(f"Failed to generate audio file for job {job_id}")
-        
-        logger.info(f"Job {job_id}: TTS conversion saved to {filename}")
+        # Use a timeout for TTS generation to prevent long-running jobs
+        try:
+            # Save audio to file with timeout
+            await asyncio.wait_for(communicate.save(filename), timeout=60.0)
+            
+            # Verify the file was created and has content
+            if not os.path.exists(filename) or os.path.getsize(filename) == 0:
+                raise Exception(f"Failed to generate audio file for job {job_id}")
+            
+            logger.info(f"Job {job_id}: TTS conversion saved to {filename} ({os.path.getsize(filename)} bytes)")
+        except asyncio.TimeoutError:
+            raise Exception(f"TTS generation timed out for job {job_id}")
 
     async def _send_webhook(self, result: JobResult):
         if not self.webhook_url or self.webhook_url.startswith("https://your-webhook"):
-            logger.info("No valid webhook URL configured; skipping notification")
             return
             
         async with aiohttp.ClientSession() as session:
@@ -169,7 +211,8 @@ class JobManager:
                 if result.processing_time:
                     payload["processing_time_seconds"] = result.processing_time
                     
-                async with session.post(self.webhook_url, json=payload) as resp:
+                # Set a timeout for webhook calls
+                async with session.post(self.webhook_url, json=payload, timeout=5.0) as resp:
                     if resp.status != 200:
                         logger.warning(f"Webhook post returned non-200 status {resp.status}")
                     else:
@@ -186,16 +229,17 @@ class JobManager:
                 jobs_to_remove = []
                 
                 for job_id, job_info in self.jobs.items():
-                    # Remove completed/failed jobs older than 6 hours
+                    # Remove completed/failed jobs older than 3 hours
                     if (job_info.status in (JobStatus.COMPLETED, JobStatus.FAILED) and 
                         job_info.end_time and 
-                        current_time - job_info.end_time > 21600):  # 6 hours
+                        current_time - job_info.end_time > 10800):  # 3 hours (reduced from 6)
                         jobs_to_remove.append(job_id)
                 
                 for job_id in jobs_to_remove:
                     del self.jobs[job_id]
                 
-                logger.info(f"Cleaned up {len(jobs_to_remove)} completed jobs from memory")
+                if jobs_to_remove:
+                    logger.info(f"Cleaned up {len(jobs_to_remove)} completed jobs from memory")
             except Exception as e:
                 logger.error(f"Error in job cleanup: {e}")
     

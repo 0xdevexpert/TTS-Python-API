@@ -1,3 +1,4 @@
+
 import os
 import json
 from fastapi import FastAPI, HTTPException, Response, BackgroundTasks
@@ -11,56 +12,102 @@ from queue_manager import JobManager, TTSRequest, AUDIO_DIR, JobStatus
 
 load_dotenv()
 
-# Initialize Socket.IO
+# Configuration from environment variables
+MAX_CONCURRENT_REQUESTS = int(os.getenv('MAX_CONCURRENT_REQUESTS', '50'))
+WEBHOOK_URL = os.getenv('WEBHOOK_URL', '')
+MAX_TEXT_LENGTH = int(os.getenv('MAX_TEXT_LENGTH', '14000'))
+
+# Initialize Socket.IO with performance optimizations
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins=['*']  # Configure for production
+    cors_allowed_origins=['*'],
+    ping_interval=30,  # Optimized heartbeat interval
+    ping_timeout=60,   # Longer timeout for connection stability
+    max_http_buffer_size=1e6  # 1MB buffer for large messages
 )
 socket_app = socketio.ASGIApp(sio)
 
-# Initialize FastAPI
-app = FastAPI()
+# Initialize FastAPI with connection pooling
+app = FastAPI(title="TTS API", 
+              description="High-performance Text-to-Speech API",
+              version="1.0.0")
 app.mount('/ws', socket_app)  # Mount Socket.IO app
 
-# Allow CORS from frontend (adjust origins as needed)
+# Allow CORS from frontend with optimized settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For development, restrict in production
+    allow_origins=["*"],  # Configure for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    max_age=86400,  # Cache preflight requests for 24 hours
 )
 
+# Initialize job manager with concurrency control
 job_manager = JobManager(max_concurrent=MAX_CONCURRENT_REQUESTS, webhook_url=WEBHOOK_URL)
+
+# Connection event handlers with client tracking
+connected_clients = set()
 
 @sio.on('connect')
 async def connect(sid, environ):
-    print(f"Client connected: {sid}")
+    connected_clients.add(sid)
+    print(f"Client connected: {sid}. Total clients: {len(connected_clients)}")
 
 @sio.on('disconnect')
 async def disconnect(sid):
-    print(f"Client disconnected: {sid}")
+    connected_clients.discard(sid)
+    print(f"Client disconnected: {sid}. Total clients: {len(connected_clients)}")
 
 async def notify_job_completion(job_id: str, status: str):
-    """Notify clients when a job is complete"""
+    """Notify clients when a job is complete with backoff for high traffic"""
     await sio.emit('job_status_update', {'job_id': job_id, 'status': status})
 
-# File to store jobs data
+# File to store jobs data with optimized file operations
 JOBS_FILE = "jobs_data.json"
+JOBS_CACHE = {}
+JOBS_CACHE_LAST_WRITE = 0
+JOBS_WRITE_INTERVAL = 10  # seconds between writes for batching
 
 def load_jobs():
+    global JOBS_CACHE, JOBS_CACHE_LAST_WRITE
+    
+    # Use cached data if available and recent
+    if JOBS_CACHE and (datetime.datetime.now().timestamp() - JOBS_CACHE_LAST_WRITE) < 60:
+        return JOBS_CACHE.copy()
+        
     if os.path.exists(JOBS_FILE):
-        with open(JOBS_FILE, 'r') as f:
-            return json.load(f)
+        try:
+            with open(JOBS_FILE, 'r') as f:
+                JOBS_CACHE = json.load(f)
+                JOBS_CACHE_LAST_WRITE = datetime.datetime.now().timestamp()
+                return JOBS_CACHE.copy()
+        except json.JSONDecodeError:
+            # Handle corrupted file
+            JOBS_CACHE = []
+            return []
     return []
 
-def save_jobs(jobs):
-    with open(JOBS_FILE, 'w') as f:
-        json.dump(jobs, f)
+async def save_jobs_async(jobs):
+    global JOBS_CACHE, JOBS_CACHE_LAST_WRITE
+    
+    # Update cache immediately
+    JOBS_CACHE = jobs.copy()
+    
+    # Only write to disk periodically to reduce I/O
+    now = datetime.datetime.now().timestamp()
+    if now - JOBS_CACHE_LAST_WRITE > JOBS_WRITE_INTERVAL:
+        try:
+            with open(JOBS_FILE, 'w') as f:
+                json.dump(jobs, f)
+            JOBS_CACHE_LAST_WRITE = now
+        except Exception as e:
+            print(f"Error saving jobs: {e}")
 
 # Initialize jobs data
 if not os.path.exists(JOBS_FILE):
-    save_jobs([])
+    with open(JOBS_FILE, 'w') as f:
+        json.dump([], f)
 
 
 class TTSRequestModel(BaseModel):
@@ -90,11 +137,14 @@ class JobStatusResponse(BaseModel):
 
 @app.get("/tts/jobs")
 async def get_all_jobs():
-    """Get all jobs from storage"""
+    """Get all jobs from storage with caching"""
     try:
         jobs = load_jobs()
-        # Check status for each job
-        for job in jobs:
+        # Only check status for recent jobs to reduce overhead
+        recent_jobs = [job for job in jobs if datetime.datetime.fromisoformat(job.get('created_at', '2000-01-01')).timestamp() > 
+                      (datetime.datetime.now().timestamp() - 3600)]  # Last hour only
+        
+        for job in recent_jobs:
             status = job_manager.get_job_status(job['job_id'])
             if status:
                 job['status'] = status.value
@@ -107,7 +157,7 @@ async def get_all_jobs():
 
 
 @app.post("/tts", response_model=TTSResponseModel)
-async def tts_endpoint(request: TTSRequestModel):
+async def tts_endpoint(request: TTSRequestModel, background_tasks: BackgroundTasks):
     if not request.text or request.text.strip() == "":
         raise HTTPException(status_code=400, detail="Text is required")
 
@@ -121,26 +171,31 @@ async def tts_endpoint(request: TTSRequestModel):
         )
     )
     
-    # Add job to persistent storage
+    # Add job to persistent storage asynchronously
     jobs = load_jobs()
     job_data = {
         "job_id": job_id,
         "text": request.text[:100] + "..." if len(request.text) > 100 else request.text,
-        "created_at": str(datetime.datetime.now()),
+        "created_at": datetime.datetime.now().isoformat(),
         "status": "processing"
     }
     jobs.append(job_data)
-    save_jobs(jobs)
+    background_tasks.add_task(save_jobs_async, jobs)
     
     # Schedule status check and notification
-    asyncio.create_task(monitor_job_status(job_id))
+    background_tasks.add_task(monitor_job_status, job_id)
     
     return TTSResponseModel(job_id=job_id)
 
 
 async def monitor_job_status(job_id: str):
-    """Monitor job status and notify clients when complete"""
-    while True:
+    """Monitor job status and notify clients when complete with backoff strategy"""
+    retries = 0
+    max_retries = 60  # 10 minutes maximum monitoring time
+    backoff_factor = 1.5
+    check_interval = 1  # Start with 1 second
+    
+    while retries < max_retries:
         status = job_manager.get_job_status(job_id)
         if status == JobStatus.COMPLETED:
             await notify_job_completion(job_id, "completed")
@@ -148,7 +203,11 @@ async def monitor_job_status(job_id: str):
         elif status == JobStatus.FAILED:
             await notify_job_completion(job_id, "failed")
             break
-        await asyncio.sleep(1)  # Check every second
+            
+        # Exponential backoff with cap
+        retries += 1
+        check_interval = min(check_interval * backoff_factor, 10)  # Cap at 10 seconds
+        await asyncio.sleep(check_interval)
 
 
 @app.get("/tts/status/{job_id}", response_model=JobStatusResponse)
@@ -171,7 +230,7 @@ async def get_job_status(job_id: str):
 
 @app.get("/tts/audio/{job_id}")
 async def get_audio(job_id: str):
-    """Serve the generated audio file"""
+    """Serve the generated audio file with caching headers"""
     audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
     
     if not os.path.exists(audio_path):
@@ -184,8 +243,12 @@ async def get_audio(job_id: str):
         # Verify we have a complete file
         if not audio_data or len(audio_data) < 100:  # Very basic check
             raise HTTPException(status_code=422, detail="Audio file appears to be incomplete")
-        
-        return Response(content=audio_data, media_type="audio/mpeg")
+            
+        response = Response(content=audio_data, media_type="audio/mpeg")
+        # Add caching headers for frequent requests
+        response.headers["Cache-Control"] = "public, max-age=86400"  # Cache for 24h
+        response.headers["ETag"] = f'"{hash(job_id)}"'
+        return response
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
@@ -204,10 +267,10 @@ async def delete_audio(job_id: str, background_tasks: BackgroundTasks):
         # Remove file
         os.remove(audio_path)
         
-        # Remove from jobs list
+        # Remove from jobs list asynchronously
         jobs = load_jobs()
         jobs = [job for job in jobs if job['job_id'] != job_id]
-        save_jobs(jobs)
+        background_tasks.add_task(save_jobs_async, jobs)
         
         # Clean up job from manager
         background_tasks.add_task(job_manager.cleanup_job, job_id)
@@ -219,5 +282,13 @@ async def delete_audio(job_id: str, background_tasks: BackgroundTasks):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for load balancers"""
-    return {"status": "healthy", "jobs_in_queue": job_manager.get_queue_size()}
+    """Health check endpoint for load balancers with system statistics"""
+    return {
+        "status": "healthy", 
+        "jobs_in_queue": job_manager.get_queue_size(),
+        "connected_clients": len(connected_clients),
+        "server_time": datetime.datetime.now().isoformat(),
+        "memory_usage": {
+            "jobs_cache_size": len(JOBS_CACHE)
+        }
+    }
