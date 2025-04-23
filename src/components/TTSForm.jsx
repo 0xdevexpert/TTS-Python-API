@@ -1,164 +1,33 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { convertTextToSpeech, fetchTtsAudio, deleteTtsAudio, MAX_CHARACTERS } from '../api/ttsApi';
+
+import React from 'react';
 import { Mic } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useToast } from "@/hooks/use-toast";
 import TTSJobList from './TTSJobList';
 import TTSFormMainFields from './TTSFormMainFields';
 import TTSFormSliders from './TTSFormSliders';
 import TTSFormActions from './TTSFormActions';
+import { useTTSForm } from '../hooks/useTTSForm';
+import { useTTSJobs } from '../hooks/useTTSJobs';
+import { MAX_CHARACTERS } from '../api/ttsApi';
 
 const TTSForm = () => {
-  const [formData, setFormData] = useState({
-    text: '',
-    voice: 'en-US-AriaNeural',
-    pitch: '0',
-    speed: '1',
-    volume: '100',
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [jobs, setJobs] = useState([]);
-  const [error, setError] = useState(null);
-  const { toast } = useToast();
-  const [characterCount, setCharacterCount] = useState(0);
-  const queryClient = useQueryClient();
+  const {
+    formData,
+    setFormData,
+    isSubmitting,
+    error,
+    characterCount,
+    handleInputChange,
+    handleSliderChange,
+    handleSubmit
+  } = useTTSForm();
 
-  const { data: existingJobs } = useQuery({
-    queryKey: ['jobs'],
-    queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/tts/jobs`);
-      if (!response.ok) throw new Error('Failed to fetch jobs');
-      return response.json();
-    },
-    refetchInterval: 1000,
-  });
-
-  useEffect(() => {
-    if (existingJobs) {
-      const processedJobs = existingJobs.map(job => ({
-        jobId: job.job_id,
-        status: job.status,
-        text: job.text,
-        fetchingAudio: false,
-        audioUrl: null,
-        error: null,
-      }));
-      setJobs(processedJobs);
-    }
-  }, [existingJobs]);
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    
-    if (name === 'text') {
-      setCharacterCount(value.length);
-      
-      if (value.length > MAX_CHARACTERS * 0.9 && value.length <= MAX_CHARACTERS) {
-        toast({
-          title: "Warning",
-          description: `Approaching character limit (${value.length}/${MAX_CHARACTERS})`,
-          variant: "warning",
-        });
-      }
-    }
-    
-    setFormData({ ...formData, [name]: value });
-  };
-
-  const handleSliderChange = (name, value) => {
-    setFormData({ ...formData, [name]: value[0].toString() });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setError(null);
-
-    if (formData.text.length > MAX_CHARACTERS) {
-      setError(`Text exceeds maximum limit of ${MAX_CHARACTERS} characters`);
-      setIsSubmitting(false);
-      toast({
-        variant: "destructive",
-        title: "Character Limit Exceeded",
-        description: `Please reduce your text to ${MAX_CHARACTERS} characters or less.`,
-      });
-      return;
-    }
-
-    try {
-      const response = await convertTextToSpeech(formData);
-      queryClient.invalidateQueries(['jobs']);
-      toast({
-        title: "Success!",
-        description: `Job submitted successfully. Job ID: ${response.job_id}`,
-      });
-    } catch (err) {
-      setError(err.message || 'An error occurred while processing your request');
-      toast({
-        variant: "destructive",
-        title: "Connection Error",
-        description: err.message || "Failed to connect to the TTS service",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const fetchAudioForJob = async (jobId) => {
-    setJobs(prevJobs =>
-      prevJobs.map(job =>
-        job.jobId === jobId
-          ? { ...job, fetchingAudio: true, error: null }
-          : job
-      )
-    );
-
-    try {
-      const audioBlob = await fetchTtsAudio(jobId);
-      const url = URL.createObjectURL(audioBlob);
-
-      setJobs(prevJobs =>
-        prevJobs.map(job =>
-          job.jobId === jobId
-            ? { ...job, audioUrl: url, status: 'ready', fetchingAudio: false, error: null }
-            : job
-        )
-      );
-      toast({
-        title: "Audio Ready!",
-        description: "You can now listen to your synthesized speech.",
-      });
-    } catch (err) {
-      setJobs(prevJobs =>
-        prevJobs.map(job =>
-          job.jobId === jobId
-            ? { ...job, audioUrl: null, fetchingAudio: false, error: err.message || "The audio is not ready yet. Please try again in a moment." }
-            : job
-        )
-      );
-      toast({
-        variant: "destructive",
-        title: "Audio Not Ready",
-        description: err.message || "The audio is not ready yet. Please try again in a moment.",
-      });
-    }
-  };
-
-  const removeJob = async (jobId) => {
-    try {
-      await deleteTtsAudio(jobId);
-      queryClient.invalidateQueries(['jobs']);
-      toast({ title: "Job Deleted", description: "Audio file and job removed successfully." });
-    } catch (err) {
-      toast({
-        variant: "destructive",
-        title: "Delete Failed",
-        description: err?.message || "Could not delete job audio.",
-      });
-    }
-  };
+  const {
+    jobs,
+    fetchAudioForJob,
+    removeJob
+  } = useTTSJobs();
 
   return (
     <Card className="w-full max-w-2xl mx-auto">
@@ -201,7 +70,6 @@ const TTSForm = () => {
             formData={formData}
             maxChars={MAX_CHARACTERS}
           />
-
         </form>
         <TTSJobList
           jobs={jobs}
