@@ -2,6 +2,7 @@ import os
 import json
 from fastapi import FastAPI, HTTPException, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+import socketio
 from pydantic import BaseModel, Field, validator
 from dotenv import load_dotenv
 import asyncio
@@ -10,11 +11,16 @@ from queue_manager import JobManager, TTSRequest, AUDIO_DIR, JobStatus
 
 load_dotenv()
 
-MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", "50"))
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
-MAX_TEXT_LENGTH = 14000  # Maximum character limit
+# Initialize Socket.IO
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins=['*']  # Configure for production
+)
+socket_app = socketio.ASGIApp(sio)
 
+# Initialize FastAPI
 app = FastAPI()
+app.mount('/ws', socket_app)  # Mount Socket.IO app
 
 # Allow CORS from frontend (adjust origins as needed)
 app.add_middleware(
@@ -27,9 +33,17 @@ app.add_middleware(
 
 job_manager = JobManager(max_concurrent=MAX_CONCURRENT_REQUESTS, webhook_url=WEBHOOK_URL)
 
-@app.on_event("startup")
-async def startup_event():
-    await job_manager.start()
+@sio.on('connect')
+async def connect(sid, environ):
+    print(f"Client connected: {sid}")
+
+@sio.on('disconnect')
+async def disconnect(sid):
+    print(f"Client disconnected: {sid}")
+
+async def notify_job_completion(job_id: str, status: str):
+    """Notify clients when a job is complete"""
+    await sio.emit('job_status_update', {'job_id': job_id, 'status': status})
 
 # File to store jobs data
 JOBS_FILE = "jobs_data.json"
@@ -118,7 +132,23 @@ async def tts_endpoint(request: TTSRequestModel):
     jobs.append(job_data)
     save_jobs(jobs)
     
+    # Schedule status check and notification
+    asyncio.create_task(monitor_job_status(job_id))
+    
     return TTSResponseModel(job_id=job_id)
+
+
+async def monitor_job_status(job_id: str):
+    """Monitor job status and notify clients when complete"""
+    while True:
+        status = job_manager.get_job_status(job_id)
+        if status == JobStatus.COMPLETED:
+            await notify_job_completion(job_id, "completed")
+            break
+        elif status == JobStatus.FAILED:
+            await notify_job_completion(job_id, "failed")
+            break
+        await asyncio.sleep(1)  # Check every second
 
 
 @app.get("/tts/status/{job_id}", response_model=JobStatusResponse)
