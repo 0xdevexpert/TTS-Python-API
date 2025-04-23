@@ -2,27 +2,11 @@
 import React from "react";
 import { useHealthMetrics } from "@/hooks/useHealthMetrics";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Gauge, Activity, Server, Clock } from "lucide-react";
+import { Gauge, Activity, Server, Clock, WifiOff } from "lucide-react";
 import { format } from "date-fns";
 
 const TTSHealthDashboard = () => {
-  const { data, isLoading, error } = useHealthMetrics();
-
-  if (error) {
-    return (
-      <Card className="bg-destructive/10 border-destructive/50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Server className="h-4 w-4" />
-            System Status
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-destructive">Unable to fetch system status</p>
-        </CardContent>
-      </Card>
-    );
-  }
+  const { data, isLoading } = useHealthMetrics();
 
   if (isLoading || !data) {
     return (
@@ -37,9 +21,31 @@ const TTSHealthDashboard = () => {
     );
   }
 
+  // If server is offline
+  if (data.status === "offline") {
+    return (
+      <Card className="bg-destructive/10 border-destructive/50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <WifiOff className="h-4 w-4" />
+            Backend Server Offline
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-destructive">
+            Cannot connect to the TTS backend server at {import.meta.env.VITE_API_BASE_URL}
+          </p>
+          <p className="text-xs text-muted-foreground mt-2">
+            Please make sure the FastAPI backend is running with: <code>uvicorn main:app --reload</code>
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <Card className="bg-secondary/30">
+      <Card className={`${data.status === "healthy" ? "bg-secondary/30" : "bg-destructive/10"}`}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">System Status</CardTitle>
           <Server className="h-4 w-4 text-muted-foreground" />

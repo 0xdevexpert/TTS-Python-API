@@ -1,3 +1,4 @@
+
 import axios from 'axios';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://tts.catacomb.fyi';
@@ -8,8 +9,23 @@ const ttsApi = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 15000, // Increased timeout for high traffic scenarios
+  timeout: 30000, // Increased from 15000 to 30000 for high traffic scenarios
 });
+
+// Add interceptor to handle connection issues
+ttsApi.interceptors.response.use(
+  response => response,
+  error => {
+    console.error('API Connection Error:', error);
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('Backend server took too long to respond. Check your connection or the server may be under high load.');
+    }
+    if (error.code === 'ERR_NETWORK') {
+      throw new Error(`Cannot connect to the backend at ${apiBaseUrl}. Please verify the server is running.`);
+    }
+    throw error;
+  }
+);
 
 export const convertTextToSpeech = async (ttsData) => {
   // Validate text length
@@ -23,12 +39,16 @@ export const convertTextToSpeech = async (ttsData) => {
   } catch (error) {
     console.error('Error in TTS API:', error);
     let errorMessage = 'An error occurred while connecting to the TTS service';
-    if (error.code === 'ERR_NETWORK') {
-      errorMessage = 'Cannot connect to the backend server. Please make sure the backend is running at ' + apiBaseUrl;
+    if (error.code === 'ECONNABORTED') {
+      errorMessage = 'Connection timeout - the server took too long to respond. It may be under high load.';
+    } else if (error.code === 'ERR_NETWORK') {
+      errorMessage = `Cannot connect to the backend server at ${apiBaseUrl}. Please check if it's running.`;
     } else if (error.response) {
       errorMessage = error.response.data?.detail || `Server error: ${error.response.status}`;
     } else if (error.request) {
       errorMessage = 'No response received from the server. Check if the backend is running.';
+    } else {
+      errorMessage = error.message; // Use the error message we created in the interceptor
     }
     throw new Error(errorMessage);
   }
