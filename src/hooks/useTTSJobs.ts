@@ -14,7 +14,13 @@ export const useTTSJobs = () => {
   const { data: existingJobs, isError } = useQuery({
     queryKey: ['jobs'],
     queryFn: async () => {
-      const response = await fetch(`${apiBaseUrl}/tts/jobs`);
+      const response = await fetch(`${apiBaseUrl}/tts/jobs`, {
+        // Add mode: 'cors' to explicitly request CORS
+        mode: 'cors',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
       if (!response.ok) throw new Error('Failed to fetch jobs');
       return response.json();
     },

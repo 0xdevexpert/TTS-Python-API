@@ -11,7 +11,7 @@ const BackendStatusInfo = () => (
       Backend URL: {import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}
     </p>
     <p className="text-xs text-muted-foreground mt-1">
-      Make sure your FastAPI backend is running with: <code>uvicorn main:app --reload</code>
+      Make sure your FastAPI backend is running with: <code>uvicorn main:app --reload --host 0.0.0.0</code>
     </p>
   </div>
 );
