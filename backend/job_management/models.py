@@ -42,3 +42,4 @@ class JobInfo:
     @property
     def age(self) -> float:
         return time.time() - self.created_at
+

@@ -26,4 +26,3 @@ class JobStatusResponse(BaseModel):
     job_id: str
     status: str
     message: str = ""
-

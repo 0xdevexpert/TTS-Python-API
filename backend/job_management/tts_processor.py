@@ -40,3 +40,4 @@ async def process_tts_request(job_id: str, text: str, voice: str, pitch: str, sp
         logger.info(f"Job {job_id}: TTS conversion saved to {filename} ({os.path.getsize(filename)} bytes)")
     except asyncio.TimeoutError:
         raise Exception(f"TTS generation timed out for job {job_id}")
+

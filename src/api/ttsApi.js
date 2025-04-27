@@ -1,131 +1,66 @@
 
 import axios from 'axios';
 
-const apiBaseUrl =  'https://tts.catacomb.fyi';
-const MAX_TEXT_LENGTH = 14000; // Maximum character limit
+export const MAX_CHARACTERS = 14000; // Maximum characters for TTS request
+const API_KEY = '234234230948029348lskdj'; // API key for authentication
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-const ttsApi = axios.create({
-  baseURL: apiBaseUrl,
+// Create an axios instance with default config
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
-  },
-  timeout: 30000, // Increased from 15000 to 30000 for high traffic scenarios
+    'Accept': 'application/json',
+    'api-key': API_KEY // Add API key to all requests
+  }
 });
 
-// Add interceptor to handle connection issues
-ttsApi.interceptors.response.use(
-  response => response,
-  error => {
-    console.error('API Connection Error:', error);
-    if (error.code === 'ECONNABORTED') {
-      throw new Error('Backend server took too long to respond. Check your connection or the server may be under high load.');
-    }
-    if (error.code === 'ERR_NETWORK') {
-      throw new Error(`Cannot connect to the backend at ${apiBaseUrl}. Please verify the server is running.`);
-    }
-    throw error;
-  }
-);
-
-export const convertTextToSpeech = async (ttsData) => {
-  // Validate text length
-  if (ttsData.text.length > MAX_TEXT_LENGTH) {
-    throw new Error(`Text exceeds maximum limit of ${MAX_TEXT_LENGTH} characters`);
-  }
-  
+// Convert text to speech
+export const convertTextToSpeech = async (data) => {
   try {
-    const response = await ttsApi.post('/tts', ttsData);
+    const response = await apiClient.post('/tts', data);
     return response.data;
   } catch (error) {
-    console.error('Error in TTS API:', error);
-    let errorMessage = 'An error occurred while connecting to the TTS service';
-    if (error.code === 'ECONNABORTED') {
-      errorMessage = 'Connection timeout - the server took too long to respond. It may be under high load.';
-    } else if (error.code === 'ERR_NETWORK') {
-      errorMessage = `Cannot connect to the backend server at ${apiBaseUrl}. Please check if it's running.`;
-    } else if (error.response) {
-      errorMessage = error.response.data?.detail || `Server error: ${error.response.status}`;
-    } else if (error.request) {
-      errorMessage = 'No response received from the server. Check if the backend is running.';
-    } else {
-      errorMessage = error.message; // Use the error message we created in the interceptor
-    }
-    throw new Error(errorMessage);
+    const message = error.response?.data?.detail || error.message;
+    throw new Error(`TTS conversion failed: ${message}`);
   }
 };
 
-// Improved fetch audio function with retry mechanism and more detailed status checking
+// Fetch TTS audio for a job
 export const fetchTtsAudio = async (jobId) => {
   try {
-    // Implement a retry strategy for status checks
-    let retries = 0;
-    const maxRetries = 3;
-    let statusCheck;
-    
-    while (retries < maxRetries) {
-      try {
-        // Check if the audio is ready
-        statusCheck = await ttsApi.get(`/tts/status/${jobId}`);
-        
-        if (statusCheck.data.status === 'completed') {
-          break; // Audio is ready, proceed to download
-        } else {
-          // If not ready, wait and retry
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          retries++;
-          
-          if (retries === maxRetries) {
-            throw new Error(`Audio processing is not complete yet. Current status: ${statusCheck.data.status}`);
-          }
-        }
-      } catch (statusError) {
-        if (statusError.response?.status === 404) {
-          throw new Error('Job not found. It may have been deleted or expired.');
-        }
-        throw statusError;
-      }
-    }
-    
-    // Get audio as blob (audio/mpeg or wav)
-    const response = await ttsApi.get(`/tts/audio/${jobId}`, {
+    const response = await apiClient.get(`/tts/audio/${jobId}`, {
       responseType: 'blob',
+      headers: {
+        'Accept': 'audio/mpeg',
+        'api-key': API_KEY
+      }
     });
-    
-    // Verify we have a complete audio file
-    if (!response.data || response.data.size === 0) {
-      throw new Error('Received incomplete audio file');
-    }
-    
     return response.data;
   } catch (error) {
-    console.error('Error fetching TTS audio:', error);
-    if (error.response?.status === 404) {
-      throw new Error('Audio file not found. The job may still be processing.');
-    }
-    throw error;
+    const message = error.response?.data?.detail || error.message;
+    throw new Error(`Failed to fetch audio: ${message}`);
   }
 };
 
+// Delete TTS audio for a job
 export const deleteTtsAudio = async (jobId) => {
   try {
-    const response = await ttsApi.delete(`/tts/audio/${jobId}`);
+    const response = await apiClient.delete(`/tts/audio/${jobId}`);
     return response.data;
   } catch (error) {
-    console.error('Error deleting TTS audio:', error);
-    throw new Error('Could not delete audio from the server');
+    const message = error.response?.data?.detail || error.message;
+    throw new Error(`Failed to delete audio: ${message}`);
   }
 };
 
-export const fetchAllJobs = async () => {
+// Fetch all TTS jobs
+export const fetchTtsJobs = async () => {
   try {
-    const response = await ttsApi.get('/tts/jobs');
+    const response = await apiClient.get('/tts/jobs');
     return response.data;
   } catch (error) {
-    console.error('Error fetching jobs:', error);
-    throw new Error('Failed to fetch jobs');
+    const message = error.response?.data?.detail || error.message;
+    throw new Error(`Failed to fetch jobs: ${message}`);
   }
 };
-
-export const MAX_CHARACTERS = MAX_TEXT_LENGTH;
-
-export default ttsApi;

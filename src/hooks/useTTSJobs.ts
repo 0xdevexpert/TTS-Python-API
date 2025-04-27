@@ -1,28 +1,23 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchTtsAudio, deleteTtsAudio } from '../api/ttsApi';
+import { fetchTtsAudio, deleteTtsAudio, fetchTtsJobs } from '../api/ttsApi';
 import { useToast } from "@/hooks/use-toast";
 import { Job } from '../types/job';
 
 export const useTTSJobs = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const { toast } = useToast();
-  const apiBaseUrl =  "https://tts.catacomb.fyi";
 
   // Use more frequent polling since we removed WebSocket
   const { data: existingJobs, isError } = useQuery({
     queryKey: ['jobs'],
     queryFn: async () => {
-      const response = await fetch(`${apiBaseUrl}/tts/jobs`, {
-        // Add mode: 'cors' to explicitly request CORS
-        mode: 'cors',
-        headers: {
-          'Accept': 'application/json'
-        }
-      });
-      if (!response.ok) throw new Error('Failed to fetch jobs');
-      return response.json();
+      try {
+        return await fetchTtsJobs();
+      } catch (error: any) {
+        console.error('Failed to fetch jobs:', error);
+        throw error;
+      }
     },
     staleTime: 1000, // Consider data fresh for 1 second
     refetchInterval: 2000, // Poll every 2 seconds
@@ -33,7 +28,7 @@ export const useTTSJobs = () => {
   // Update jobs state when we get new data
   useEffect(() => {
     if (existingJobs) {
-      const processedJobs = existingJobs.map(job => ({
+      const processedJobs = existingJobs.map((job: any) => ({
         jobId: job.job_id,
         status: job.status,
         text: job.text,
