@@ -3,7 +3,7 @@ import axios from 'axios';
 
 export const MAX_CHARACTERS = 14000; // Maximum characters for TTS request
 const API_KEY = '234234230948029348lskdj'; // API key for authentication
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = 'http://localhost:8000';
 
 // Create an axios instance with default config
 const apiClient = axios.create({

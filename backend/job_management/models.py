@@ -1,6 +1,7 @@
 
 import enum
 import time
+import datetime
 from typing import Optional
 from pydantic import BaseModel
 
@@ -22,6 +23,7 @@ class JobResult(BaseModel):
     status: str
     message: Optional[str] = None
     processing_time: Optional[float] = None
+    timestamp: Optional[datetime.datetime] = None
 
 class JobInfo:
     def __init__(self, job_id: str, request: TTSRequest):
@@ -42,4 +44,3 @@ class JobInfo:
     @property
     def age(self) -> float:
         return time.time() - self.created_at
-

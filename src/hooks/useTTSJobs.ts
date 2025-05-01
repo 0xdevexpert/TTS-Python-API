@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchTtsAudio, deleteTtsAudio, fetchTtsJobs } from '../api/ttsApi';
@@ -7,31 +8,43 @@ import { Job } from '../types/job';
 export const useTTSJobs = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const { toast } = useToast();
+  const [lastError, setLastError] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
 
   // Use more frequent polling since we removed WebSocket
-  const { data: existingJobs, isError } = useQuery({
+  const { data: existingJobs, isError, error } = useQuery({
     queryKey: ['jobs'],
     queryFn: async () => {
       try {
-        return await fetchTtsJobs();
+        const result = await fetchTtsJobs();
+        setIsOffline(false);
+        return result;
       } catch (error: any) {
         console.error('Failed to fetch jobs:', error);
+        const errorMessage = error?.message || "Network error";
+        setLastError(errorMessage);
+        
+        // Check if it's a network error and set offline status
+        if (errorMessage.includes("Network Error")) {
+          setIsOffline(true);
+        }
+        
         throw error;
       }
     },
     staleTime: 1000, // Consider data fresh for 1 second
-    refetchInterval: 2000, // Poll every 2 seconds
+    refetchInterval: isOffline ? 5000 : 2000, // Poll more frequently when online
     retry: 3,
     retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 10000),
   });
 
   // Update jobs state when we get new data
   useEffect(() => {
-    if (existingJobs) {
+    if (existingJobs && Array.isArray(existingJobs)) {
       const processedJobs = existingJobs.map((job: any) => ({
         jobId: job.job_id,
         status: job.status,
-        text: job.text,
+        text: job.text || "Text to speech job", // Fallback if text is not available
         fetchingAudio: false,
         audioUrl: null,
         error: null,
@@ -40,16 +53,32 @@ export const useTTSJobs = () => {
     }
   }, [existingJobs]);
 
-  // Show error toast if fetch fails
+  // Show error toast if fetch fails, but only once per error message
   useEffect(() => {
-    if (isError) {
-      toast({
-        variant: "destructive",
-        title: "Connection Error",
-        description: "Failed to load job data. Will retry automatically.",
-      });
+    if (isError && error && !isOffline) {
+      const errorMessage = (error as Error).message;
+      if (errorMessage !== lastError) {
+        toast({
+          variant: "destructive",
+          title: "Connection Error",
+          description: errorMessage || "Failed to load job data. Will retry automatically.",
+        });
+        setLastError(errorMessage);
+      }
     }
-  }, [isError, toast]);
+  }, [isError, error, toast, lastError, isOffline]);
+
+  // Show toast when connection is restored after being offline
+  useEffect(() => {
+    if (!isError && lastError && isOffline) {
+      toast({
+        title: "Connection Restored",
+        description: "Successfully reconnected to the server.",
+      });
+      setLastError(null);
+      setIsOffline(false);
+    }
+  }, [isError, isOffline, lastError, toast]);
 
   const fetchAudioForJob = useCallback(async (jobId: string) => {
     setJobs(prevJobs =>
@@ -112,6 +141,7 @@ export const useTTSJobs = () => {
     jobs,
     setJobs,
     fetchAudioForJob,
-    removeJob
+    removeJob,
+    isOffline
   };
 };

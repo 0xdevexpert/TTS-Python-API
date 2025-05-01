@@ -1,8 +1,9 @@
+
 import os
 import datetime
 from fastapi import APIRouter, HTTPException, Response, BackgroundTasks
 from models import TTSRequestModel, TTSResponseModel, JobStatusResponse
-from storage import load_jobs, save_jobs_async
+from storage import load_jobs
 from job_management import JobManager, JobStatus, TTSRequest
 from job_management.tts_processor import AUDIO_DIR
 
@@ -15,28 +16,40 @@ def initialize_router(manager: JobManager):
 
 @router.get("/tts/jobs")
 async def get_all_jobs():
-    """Get all jobs from storage with caching"""
+    """Get all jobs by scanning the audio directory"""
     try:
-        jobs = load_jobs()  # Dynamically fetch and update job statuses
-        recent_jobs = [
-            job for job in jobs
-            if datetime.datetime.fromisoformat(job.get('created_at', '2000-01-01')).timestamp() >
-            (datetime.datetime.now().timestamp() - 3600)  # Last hour only
-        ]
-
-        for job in recent_jobs:
-            status = job_manager.get_job_status(job['job_id'])
-            if status:
-                job['status'] = status.value
-            audio_path = os.path.join(AUDIO_DIR, f"{job['job_id']}.mp3")
-            job['audio_exists'] = os.path.exists(audio_path)
-
-        return recent_jobs
+        # Get completed jobs from audio files
+        completed_jobs = load_jobs()
+        
+        # Get active jobs from job manager
+        active_jobs = []
+        if job_manager:
+            for job_id, job_info in job_manager.jobs.items():
+                # Skip if this job already has an audio file (would be in completed_jobs)
+                audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
+                if os.path.exists(audio_path):
+                    continue
+                    
+                active_job = {
+                    "job_id": job_id,
+                    "status": job_info.status.value,
+                    "created_at": datetime.datetime.fromtimestamp(job_info.created_at).isoformat(),
+                    "audio_exists": False,
+                    "text": job_info.request.text[:100] + "..." if len(job_info.request.text) > 100 else job_info.request.text
+                }
+                active_jobs.append(active_job)
+        
+        # Combine and sort all jobs by creation time (newest first)
+        all_jobs = completed_jobs + active_jobs
+        all_jobs.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        
+        # Limit to most recent jobs
+        return all_jobs[:50]  # Return only the 50 most recent jobs
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Error getting jobs: {str(e)}")
 
 @router.post("/tts", response_model=TTSResponseModel)
-async def tts_endpoint(request: TTSRequestModel, background_tasks: BackgroundTasks):
+async def tts_endpoint(request: TTSRequestModel):
     if not request.text or request.text.strip() == "":
         raise HTTPException(status_code=400, detail="Text is required")
 
@@ -50,26 +63,19 @@ async def tts_endpoint(request: TTSRequestModel, background_tasks: BackgroundTas
         )
     )
     
-    jobs = load_jobs()
-    job_data = {
-        "job_id": job_id,
-        "text": request.text[:100] + "..." if len(request.text) > 100 else request.text,
-        "created_at": datetime.datetime.now().isoformat(),
-        "status": "processing"
-    }
-    jobs.append(job_data)
-    background_tasks.add_task(save_jobs_async, jobs)
-    
     return TTSResponseModel(job_id=job_id)
 
 @router.get("/tts/status/{job_id}", response_model=JobStatusResponse)
 async def get_job_status(job_id: str):
     """Check the status of a TTS job"""
+    # First check if the audio file already exists
+    audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
+    if os.path.exists(audio_path):
+        return JobStatusResponse(job_id=job_id, status="completed", message="Audio is ready")
+    
+    # If not, check the job in memory
     status = job_manager.get_job_status(job_id)
     if status is None:
-        audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
-        if os.path.exists(audio_path):
-            return JobStatusResponse(job_id=job_id, status="completed", message="Audio is ready")
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
         
     return JobStatusResponse(
@@ -104,7 +110,7 @@ async def get_audio(job_id: str):
 
 @router.delete("/tts/audio/{job_id}")
 async def delete_audio(job_id: str, background_tasks: BackgroundTasks):
-    """Delete the generated audio file and remove from jobs list"""
+    """Delete the generated audio file"""
     audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
     
     if not os.path.exists(audio_path):
@@ -113,11 +119,9 @@ async def delete_audio(job_id: str, background_tasks: BackgroundTasks):
     try:
         os.remove(audio_path)
         
-        jobs = load_jobs()
-        jobs = [job for job in jobs if job['job_id'] != job_id]
-        background_tasks.add_task(save_jobs_async, jobs)
-        
-        background_tasks.add_task(job_manager.cleanup_job, job_id)
+        # Also clean up from job manager if it exists there
+        if job_id in job_manager.jobs:
+            background_tasks.add_task(job_manager.cleanup_job, job_id)
         
         return {"message": f"Audio for job {job_id} deleted successfully"}
     except Exception as e:
@@ -127,28 +131,25 @@ async def delete_audio(job_id: str, background_tasks: BackgroundTasks):
 async def health_check():
     """Health check endpoint for load balancers with system statistics"""
     try:
-        # Load cached jobs
-        cached_jobs = load_jobs()
-        jobs_cache_size = len(cached_jobs)
-
-        # Include audio files not in cached jobs
-        audio_files = set(os.listdir(AUDIO_DIR))
-        audio_jobs_count = sum(1 for file in audio_files if file.endswith(".mp3"))
-        jobs_cache_size = max(jobs_cache_size, audio_jobs_count)
+        # Scan audio directory
+        audio_files_count = 0
+        if os.path.exists(AUDIO_DIR):
+            audio_files = [f for f in os.listdir(AUDIO_DIR) if f.endswith('.mp3')]
+            audio_files_count = len(audio_files)
 
         # Get active jobs in the queue
-        active_jobs_size = job_manager.get_queue_size()
+        active_jobs_size = job_manager.get_queue_size() if job_manager else 0
 
         return {
             "status": "healthy",
-            "jobs_cache_size": jobs_cache_size,
+            "audio_files_count": audio_files_count,
             "active_jobs_size": active_jobs_size,
             "message": "System is operational"
         }
     except Exception as e:
         return {
             "status": "unhealthy",
-            "jobs_cache_size": 0,
+            "audio_files_count": 0,
             "active_jobs_size": 0,
             "message": f"Error: {str(e)}"
         }

@@ -1,3 +1,4 @@
+
 import os
 from fastapi import FastAPI, Security, HTTPException, Depends
 from fastapi.security.api_key import APIKeyHeader
@@ -33,9 +34,7 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
 if WEBHOOK_URL:
     parsed_url = urlparse(WEBHOOK_URL)
     if not all([parsed_url.scheme, parsed_url.netloc]):
-        raise ValueError(f"Invalid WEBHOOK_URL: {WEBHOOK_URL}")
-else:
-    print("Warning: WEBHOOK_URL is not set. Some features may not work as expected.")
+        print(f"Warning: Invalid WEBHOOK_URL format: {WEBHOOK_URL}")
 
 # Initialize FastAPI with connection pooling
 app = FastAPI(
@@ -45,10 +44,16 @@ app = FastAPI(
     dependencies=[Depends(get_api_key)]  # Apply API key check globally
 )
 
-# Allow CORS from frontend with optimized settings
+# Allow CORS from all approved frontend sources
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "https://vocal-craft-orchestrator.vercel.app"],  # Configure for production
+    allow_origins=[
+        "http://localhost:8080",  # Local development
+        "https://vocal-craft-orchestrator.vercel.app",  # Production domain
+        "https://speechma.com",  # Customer production domain
+        "https://www.speechma.com",  # Customer production www subdomain
+        "http://lightgray-ibis-796203.hostingersite.com"  # Testing domain
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
