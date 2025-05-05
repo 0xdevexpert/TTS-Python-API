@@ -3,6 +3,7 @@ import asyncio
 import time
 import logging
 import datetime
+import traceback
 from typing import Dict
 from .models import JobStatus, JobInfo, JobResult
 from .tts_processor import process_tts_request, AUDIO_DIR
@@ -24,17 +25,31 @@ class JobProcessor:
         job_info.status = JobStatus.PROCESSING
 
         try:
-            logger.info(f"Processing job {job_info.job_id}")
+            logger.info(f"Processing job {job_info.job_id} - started")
+            logger.info(f"Job {job_info.job_id} parameters: voice={job_info.request.voice}, text_length={len(job_info.request.text)}")
             
-            # Process the TTS request
-            await process_tts_request(
-                job_info.job_id,
-                job_info.request.text,
-                job_info.request.voice,
-                job_info.request.pitch,
-                job_info.request.speed,
-                job_info.request.volume
-            )
+            # Process the TTS request with a timeout
+            try:
+                # Process the TTS request
+                await asyncio.wait_for(
+                    process_tts_request(
+                        job_info.job_id,
+                        job_info.request.text,
+                        job_info.request.voice,
+                        job_info.request.pitch,
+                        job_info.request.speed,
+                        job_info.request.volume
+                    ),
+                    timeout=60.0  # Overall timeout for the entire process
+                )
+            except asyncio.TimeoutError:
+                error_msg = f"TTS processing timed out for job {job_info.job_id} (60 second timeout exceeded)"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+            except Exception as e:
+                error_msg = f"TTS processing error for job {job_info.job_id}: {str(e)}"
+                logger.error(f"{error_msg}\n{traceback.format_exc()}")
+                raise Exception(error_msg)
             
             job_info.status = JobStatus.COMPLETED
             
@@ -48,26 +63,49 @@ class JobProcessor:
             )
             
             # Send webhook in a separate task to prevent blocking
-            asyncio.create_task(send_webhook(self.webhook_url, result))
+            logger.info(f"Job {job_info.job_id} completed successfully. Sending webhook notification.")
+            webhook_task = asyncio.create_task(send_webhook(self.webhook_url, result))
             
             # Schedule auto-deletion
-            asyncio.create_task(self.auto_deletion_manager.schedule_auto_delete(job_info.job_id))
+            logger.info(f"Scheduling auto-deletion for job {job_info.job_id}")
+            deletion_task = asyncio.create_task(self.auto_deletion_manager.schedule_auto_delete(job_info.job_id))
             
-            logger.info(f"Job {job_info.job_id} completed successfully.")
+            # Wait for webhook to complete (but don't block forever)
+            try:
+                await asyncio.wait_for(webhook_task, timeout=5.0)
+                logger.info(f"Webhook notification sent successfully for job {job_info.job_id}")
+            except asyncio.TimeoutError:
+                logger.warning(f"Webhook notification timed out for job {job_info.job_id}")
+            except Exception as e:
+                logger.error(f"Webhook notification failed for job {job_info.job_id}: {str(e)}")
+                
         except Exception as e:
-            logger.error(f"Job {job_info.job_id} failed: {e}")
+            error_message = str(e)
+            logger.error(f"Job {job_info.job_id} failed: {error_message}\n{traceback.format_exc()}")
             job_info.status = JobStatus.FAILED
+            job_info.error_message = error_message
             
             # Send failure notification
             result = JobResult(
                 job_id=job_info.job_id,
                 status="failed",
-                message=str(e),
+                message=error_message,
                 timestamp=datetime.datetime.now()
             )
             
             # Send webhook in a separate task
-            asyncio.create_task(send_webhook(self.webhook_url, result))
+            try:
+                await asyncio.wait_for(
+                    send_webhook(self.webhook_url, result),
+                    timeout=5.0
+                )
+                logger.info(f"Webhook failure notification sent for job {job_info.job_id}")
+            except Exception as webhook_error:
+                logger.error(f"Failed to send webhook failure notification for job {job_info.job_id}: {str(webhook_error)}")
         finally:
             job_info.end_time = time.time()
+            processing_time = job_info.end_time - job_info.start_time
+            logger.info(f"Job {job_info.job_id} processing finished in {processing_time:.2f} seconds with status {job_info.status.value}")
             self.semaphore.release()
+            logger.info(f"Released semaphore for job {job_info.job_id}")
+

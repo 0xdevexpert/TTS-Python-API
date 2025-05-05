@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchTtsAudio, deleteTtsAudio, fetchTtsJobs } from '../api/ttsApi';
+import { fetchTtsAudio, deleteTtsAudio, fetchTtsJobs, checkApiHealth } from '../api/ttsApi';
 import { useToast } from "@/hooks/use-toast";
 import { Job } from '../types/job';
 
@@ -10,6 +10,27 @@ export const useTTSJobs = () => {
   const { toast } = useToast();
   const [lastError, setLastError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
+  const [serverStatus, setServerStatus] = useState<'unknown' | 'healthy' | 'unhealthy'>('unknown');
+
+  // Check API health on component mount
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const health = await checkApiHealth();
+        setServerStatus(health.status === 'healthy' ? 'healthy' : 'unhealthy');
+        setIsOffline(false);
+      } catch (error) {
+        setServerStatus('unhealthy');
+        setIsOffline(true);
+        console.error('Health check failed:', error);
+      }
+    };
+    
+    checkHealth();
+    const healthInterval = setInterval(checkHealth, 30000); // Check every 30 seconds
+    
+    return () => clearInterval(healthInterval);
+  }, []);
 
   // Use more frequent polling since we removed WebSocket
   const { data: existingJobs, isError, error } = useQuery({
@@ -24,9 +45,21 @@ export const useTTSJobs = () => {
         const errorMessage = error?.message || "Network error";
         setLastError(errorMessage);
         
+        // Extract more details from the enhanced error
+        const errorDetail = error?.detail ? 
+          (typeof error.detail === 'object' ? JSON.stringify(error.detail) : error.detail) : 
+          '';
+        
+        console.error('Fetch jobs error details:', {
+          message: errorMessage,
+          detail: errorDetail,
+          statusCode: error?.statusCode
+        });
+        
         // Check if it's a network error and set offline status
-        if (errorMessage.includes("Network Error")) {
+        if (errorMessage.includes("Network Error") || error?.statusCode === undefined) {
           setIsOffline(true);
+          setServerStatus('unhealthy');
         }
         
         throw error;
@@ -108,17 +141,29 @@ export const useTTSJobs = () => {
         description: "You can now listen to your synthesized speech.",
       });
     } catch (err: any) {
+      // Extract more detailed error information
+      const errorMessage = err?.message || "Unknown error fetching audio";
+      const errorDetail = err?.detail ? 
+        (typeof err.detail === 'object' ? JSON.stringify(err.detail) : err.detail) : 
+        '';
+      
+      console.error('Audio fetch error details:', {
+        message: errorMessage,
+        detail: errorDetail,
+        statusCode: err?.statusCode
+      });
+      
       setJobs(prevJobs =>
         prevJobs.map(job =>
           job.jobId === jobId
-            ? { ...job, audioUrl: null, fetchingAudio: false, error: err.message }
+            ? { ...job, audioUrl: null, fetchingAudio: false, error: errorMessage }
             : job
         )
       );
       toast({
         variant: "destructive",
         title: "Audio Not Ready",
-        description: err.message || "The audio is not ready yet. Please try again in a moment.",
+        description: errorMessage || "The audio is not ready yet. Please try again in a moment.",
       });
     }
   }, [toast]);
@@ -129,10 +174,22 @@ export const useTTSJobs = () => {
       setJobs(prevJobs => prevJobs.filter(job => job.jobId !== jobId));
       toast({ title: "Job Deleted", description: "Audio file and job removed successfully." });
     } catch (err: any) {
+      // Extract more detailed error information
+      const errorMessage = err?.message || "Unknown error deleting job";
+      const errorDetail = err?.detail ? 
+        (typeof err.detail === 'object' ? JSON.stringify(err.detail) : err.detail) : 
+        '';
+      
+      console.error('Job delete error details:', {
+        message: errorMessage,
+        detail: errorDetail,
+        statusCode: err?.statusCode
+      });
+      
       toast({
         variant: "destructive",
         title: "Delete Failed",
-        description: err?.message || "Could not delete job audio.",
+        description: errorMessage || "Could not delete job audio.",
       });
     }
   }, [toast]);
@@ -142,6 +199,7 @@ export const useTTSJobs = () => {
     setJobs,
     fetchAudioForJob,
     removeJob,
-    isOffline
+    isOffline,
+    serverStatus
   };
 };

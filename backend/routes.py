@@ -1,8 +1,10 @@
 
 import os
 import datetime
-from fastapi import APIRouter, HTTPException, Response, BackgroundTasks
-from models import TTSRequestModel, TTSResponseModel, JobStatusResponse
+import asyncio
+import traceback
+from fastapi import APIRouter, HTTPException, Response, BackgroundTasks, Request
+from models import TTSRequestModel, TTSResponseModel, JobStatusResponse, DetailedErrorResponse
 from storage import load_jobs
 from job_management import JobManager, JobStatus, TTSRequest
 from job_management.tts_processor import AUDIO_DIR
@@ -46,43 +48,85 @@ async def get_all_jobs():
         # Limit to most recent jobs
         return all_jobs[:50]  # Return only the 50 most recent jobs
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting jobs: {str(e)}")
+        error_detail = f"Error getting jobs: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)  # Console log for server-side debugging
+        raise HTTPException(status_code=500, detail={"message": str(e), "traceback": traceback.format_exc()})
 
 @router.post("/tts", response_model=TTSResponseModel)
-async def tts_endpoint(request: TTSRequestModel):
-    if not request.text or request.text.strip() == "":
-        raise HTTPException(status_code=400, detail="Text is required")
-
-    job_id = await job_manager.add_job(
-        TTSRequest(
-            text=request.text.strip(),
-            voice=request.voice,
-            pitch=request.pitch,
-            speed=request.speed,
-            volume=request.volume,
-        )
-    )
+async def tts_endpoint(request: TTSRequestModel, req: Request):
+    try:
+        if not request.text or request.text.strip() == "":
+            raise HTTPException(status_code=400, detail={"message": "Text is required"})
     
-    return TTSResponseModel(job_id=job_id)
+        # Log client information for debugging
+        client_host = req.client.host if req.client else "unknown"
+        user_agent = req.headers.get("user-agent", "unknown")
+        content_length = len(request.text)
+        
+        print(f"TTS request from {client_host} with User-Agent: {user_agent}, content length: {content_length}")
+        
+        # Ensure we have capacity for this job
+        if job_manager.get_queue_size() > job_manager.max_concurrent * 2:
+            raise HTTPException(
+                status_code=503, 
+                detail={"message": "Server is currently at capacity. Please try again later.", 
+                        "queue_size": job_manager.get_queue_size()}
+            )
+        
+        job_id = await job_manager.add_job(
+            TTSRequest(
+                text=request.text.strip(),
+                voice=request.voice,
+                pitch=request.pitch,
+                speed=request.speed,
+                volume=request.volume,
+            )
+        )
+        
+        return TTSResponseModel(job_id=job_id)
+    except HTTPException as he:
+        # Re-raise HTTP exceptions
+        raise he
+    except Exception as e:
+        # Log the exception with detailed traceback
+        error_detail = f"Error in /tts endpoint: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)
+        raise HTTPException(
+            status_code=500, 
+            detail={"message": f"Internal server error: {str(e)}", "traceback": traceback.format_exc()}
+        )
 
 @router.get("/tts/status/{job_id}", response_model=JobStatusResponse)
 async def get_job_status(job_id: str):
     """Check the status of a TTS job"""
-    # First check if the audio file already exists
-    audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
-    if os.path.exists(audio_path):
-        return JobStatusResponse(job_id=job_id, status="completed", message="Audio is ready")
-    
-    # If not, check the job in memory
-    status = job_manager.get_job_status(job_id)
-    if status is None:
-        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    try:
+        # First check if the audio file already exists
+        audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
+        if os.path.exists(audio_path):
+            return JobStatusResponse(job_id=job_id, status="completed", message="Audio is ready")
         
-    return JobStatusResponse(
-        job_id=job_id,
-        status=status.value,
-        message="Audio is being processed" if status == JobStatus.PROCESSING else "Audio is ready"
-    )
+        # If not, check the job in memory
+        status = job_manager.get_job_status(job_id)
+        if status is None:
+            raise HTTPException(
+                status_code=404, 
+                detail={"message": f"Job {job_id} not found", "job_id": job_id}
+            )
+            
+        return JobStatusResponse(
+            job_id=job_id,
+            status=status.value,
+            message="Audio is being processed" if status == JobStatus.PROCESSING else "Audio is ready"
+        )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        error_detail = f"Error checking job status: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)
+        raise HTTPException(
+            status_code=500, 
+            detail={"message": f"Error checking job status: {str(e)}", "traceback": traceback.format_exc()}
+        )
 
 @router.get("/tts/audio/{job_id}")
 async def get_audio(job_id: str):
@@ -90,23 +134,34 @@ async def get_audio(job_id: str):
     audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
     
     if not os.path.exists(audio_path):
-        raise HTTPException(status_code=404, detail=f"Audio for job {job_id} not found or not ready yet")
+        raise HTTPException(
+            status_code=404, 
+            detail={"message": f"Audio for job {job_id} not found or not ready yet", "job_id": job_id}
+        )
     
     try:
         with open(audio_path, "rb") as f:
             audio_data = f.read()
         
         if not audio_data or len(audio_data) < 100:
-            raise HTTPException(status_code=422, detail="Audio file appears to be incomplete")
+            raise HTTPException(
+                status_code=422, 
+                detail={"message": f"Audio file appears to be incomplete for job {job_id}", "job_id": job_id}
+            )
             
         response = Response(content=audio_data, media_type="audio/mpeg")
         response.headers["Cache-Control"] = "public, max-age=86400"
         response.headers["ETag"] = f'"{hash(job_id)}"'
         return response
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=500, detail=f"Error reading audio file: {str(e)}")
+        error_detail = f"Error reading audio file: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)
+        raise HTTPException(
+            status_code=500, 
+            detail={"message": f"Error reading audio file: {str(e)}", "traceback": traceback.format_exc()}
+        )
 
 @router.delete("/tts/audio/{job_id}")
 async def delete_audio(job_id: str, background_tasks: BackgroundTasks):
@@ -114,7 +169,10 @@ async def delete_audio(job_id: str, background_tasks: BackgroundTasks):
     audio_path = os.path.join(AUDIO_DIR, f"{job_id}.mp3")
     
     if not os.path.exists(audio_path):
-        raise HTTPException(status_code=404, detail=f"Audio for job {job_id} not found")
+        raise HTTPException(
+            status_code=404, 
+            detail={"message": f"Audio for job {job_id} not found", "job_id": job_id}
+        )
     
     try:
         os.remove(audio_path)
@@ -125,7 +183,12 @@ async def delete_audio(job_id: str, background_tasks: BackgroundTasks):
         
         return {"message": f"Audio for job {job_id} deleted successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete audio: {str(e)}")
+        error_detail = f"Failed to delete audio: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)
+        raise HTTPException(
+            status_code=500, 
+            detail={"message": f"Failed to delete audio: {str(e)}", "traceback": traceback.format_exc()}
+        )
 
 @router.get("/health")
 async def health_check():
@@ -139,17 +202,23 @@ async def health_check():
 
         # Get active jobs in the queue
         active_jobs_size = job_manager.get_queue_size() if job_manager else 0
+        memory_jobs_count = len(job_manager.jobs) if job_manager else 0
 
         return {
             "status": "healthy",
             "audio_files_count": audio_files_count,
             "active_jobs_size": active_jobs_size,
+            "memory_jobs_count": memory_jobs_count,
             "message": "System is operational"
         }
     except Exception as e:
+        error_detail = f"Health check error: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)
         return {
             "status": "unhealthy",
             "audio_files_count": 0,
             "active_jobs_size": 0,
-            "message": f"Error: {str(e)}"
+            "memory_jobs_count": 0,
+            "message": f"Error: {str(e)}",
+            "traceback": traceback.format_exc()
         }

@@ -51,8 +51,12 @@ app.add_middleware(
         "http://localhost:8080",  # Local development
         "https://vocal-craft-orchestrator.vercel.app",  # Production domain
         "https://speechma.com",  # Customer production domain
+        "http://speechma.com",  # Customer production domain (http)
         "https://www.speechma.com",  # Customer production www subdomain
-        "http://lightgray-ibis-796203.hostingersite.com"  # Testing domain
+        "http://www.speechma.com",  # Customer production www subdomain (http)
+        "http://lightgray-ibis-796203.hostingersite.com",  # Testing domain
+        "https://lightgray-ibis-796203.hostingersite.com",  # Testing domain (https)
+        "*"  # Allow all origins temporarily for debugging
     ],
     allow_credentials=True,
     allow_methods=["*"],

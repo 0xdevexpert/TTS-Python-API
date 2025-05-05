@@ -26,3 +26,9 @@ class JobStatusResponse(BaseModel):
     job_id: str
     status: str
     message: str = ""
+
+class DetailedErrorResponse(BaseModel):
+    message: str
+    traceback: str = None
+    job_id: str = None
+
